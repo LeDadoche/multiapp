@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestionnaire de finances</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- Dropbox JS SDK -->
+  <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Gestionnaire de finances</h1>
+    <br>
+    <label class="dark-mode-toggle">
+      <input type="checkbox" id="dark-mode-switch" />
+      <span class="slider"></span>
+      <span class="label-text">Mode sombre</span>
+    </label>
+    <button id="dropbox-login" class="dropbox-btn">Se connecter à Dropbox</button>
+    <span id="dropbox-status" style="font-weight:bold;margin-left:10px;"></span>
+  </header>
+  <main>
+    <!-- Onglets -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="tab-transactions">Transactions</button>
+      <button class="tab-btn" data-tab="tab-stats">Statistiques</button>
+      <button class="tab-btn" data-tab="tab-history">Historique</button>
+    </nav>
+
+    <!-- Onglet Transactions -->
+    <div id="tab-transactions" class="tab-content" style="display:block;">
+      <section id="form-section">
+        <h2>Nouvelle transaction</h2>
+        <form id="transaction-form">
+          <div class="form-row">
+            <label for="type">Type :</label>
+            <select id="type" required>
+              <option value="income">Revenu</option>
+              <option value="expense">Dépense</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="category">Catégorie :</label>
+            <div id="category-picker" class="category-picker">
+              <input type="hidden" id="category" name="category" required>
+              <span id="selected-category" class="category-icon-preview" title="Clique pour choisir"></span>
+              <div id="category-dropdown" class="category-dropdown"></div>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="description">Description :</label>
+            <input type="text" id="description" required />
+          </div>
+          <div class="form-row">
+            <label for="amount">Montant (€) :</label>
+            <input type="number" id="amount" step="0.01" required />
+          </div>
+          <div class="form-row">
+            <label for="date">Date :</label>
+            <input type="date" id="date" required />
+          </div>
+          <div class="form-row">
+            <label for="recurrence">Récurrence :</label>
+            <select id="recurrence">
+              <option value="none">Aucune</option>
+              <option value="monthly">Mensuelle</option>
+              <option value="installments">Paiement en X fois</option>
+            </select>
+          </div>
+          <div class="form-row" id="installments-row" style="display: none;">
+            <label for="installments">Nombre d'échéances :</label>
+            <input type="number" id="installments" min="2" max="24" />
+          </div>
+          <div class="form-row">
+            <button type="submit">Ajouter</button>
+          </div>
+        </form>
+      </section>
+      <section id="salary-section">
+        <h2>Salaire et économies</h2>
+        <div class="form-row">
+          <label for="salary">Salaire mensuel (€) :</label>
+          <input type="number" id="salary" step="0.01" />
+        </div>
+        <div class="form-row">
+          <label for="savings">Épargne désirée (€) :</label>
+          <input type="number" id="savings" step="0.01" />
+        </div>
+        <div class="form-row">
+          <button id="calculate-saving">Calculer le reste à vivre</button>
+        </div>
+        <p id="saving-result"></p>
+      </section>
+      <section id="calendar-section">
+        <h2>Calendrier</h2>
+        <div class="calendar-nav">
+          <button id="prev-month">&lt; Mois précédent</button>
+          <span id="current-month"></span>
+          <button id="next-month">Mois suivant &gt;</button>
+        </div>
+        <table id="calendar"></table>
+        <div id="day-details"></div>
+      </section>
+    </div>
+    <!-- Onglet Statistiques -->
+    <div id="tab-stats" class="tab-content" style="display:none;">
+      <section id="stats-section">
+        <h2>Statistiques</h2>
+        <div id="chart-container"></div>
+        <p id="stats-info"></p>
+      </section>
+    </div>
+    <!-- Onglet Historique -->
+    <div id="tab-history" class="tab-content" style="display:none;">
+      <section id="transactions-section">
+        <h2>Liste des transactions</h2>
+        <ul id="transactions-list"></ul>
+      </section>
+      <section id="export-section">
+        <h2>Exportation</h2>
+        <button id="export-json">Exporter en JSON</button>
+      </section>
+    </div>
+  </main>
+  <script src="script.js"></script>
+</body>
+</html>
