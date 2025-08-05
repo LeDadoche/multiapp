@@ -249,7 +249,12 @@ function transactionsForDay(dateString) {
   for (const tx of transactions) {
     const txDate = new Date(tx.date);
     if (tx.recurrence === 'monthly') {
-      if (txDate.getDate() === day) {
+      // Si la date du mois courant >= date de départ de la transaction récurrente
+      if (
+        txDate.getDate() === day &&
+        (selectedDate.getFullYear() > txDate.getFullYear() ||
+         (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+      ) {
         list.push({ ...tx, date: formatDate(selectedDate) });
       }
     } else if (formatDate(txDate) === dateString) {
@@ -325,6 +330,11 @@ function renderCalendar() {
           td.classList.add('selected');
         });
 
+        // *** Ajoute le double-clic pour ajouter une transaction rapide ***
+        td.addEventListener('dblclick', () => {
+          openAddTransactionModal(dateString);
+        });
+
         const dayOfWeek = (dateObj.getDay() + 6) % 7;
         if (dayOfWeek >= 5) td.classList.add('calendar-weekend');
         if (holidays[dateString]) {
@@ -345,6 +355,7 @@ function renderCalendar() {
   ];
   document.getElementById('current-month').textContent = `${monthNames[month]} ${year}`;
 }
+
 function displayDayDetails(dateString) {
   const container = document.getElementById('day-details');
   const txDay = transactionsForDay(dateString);
@@ -366,6 +377,30 @@ function displayDayDetails(dateString) {
   html += '</ul>';
   container.innerHTML = html;
 }
+
+// Nouvelle logique pour afficher les transactions mensuelles “à partir de la date de départ”
+function transactionsForDay(dateString) {
+  const selectedDate = new Date(dateString);
+  const day = selectedDate.getDate();
+  const list = [];
+  for (const tx of transactions) {
+    const txDate = new Date(tx.date);
+    if (tx.recurrence === 'monthly') {
+      // La transaction doit apparaître UNIQUEMENT si date courante >= date de départ
+      if (
+        txDate.getDate() === day &&
+        (selectedDate.getFullYear() > txDate.getFullYear() ||
+         (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+      ) {
+        list.push({ ...tx, date: formatDate(selectedDate) });
+      }
+    } else if (formatDate(txDate) === dateString) {
+      list.push(tx);
+    }
+  }
+  return list;
+}
+
 // Liste des transactions
 function renderTransactionList() {
   const list = document.getElementById('transactions-list');
@@ -380,6 +415,14 @@ function renderTransactionList() {
       icon = `<span class="material-icons" style="font-size:1em;margin-right:8px">${tx.category.icon}</span>`;
     const text = `${tx.date} – ${icon}${tx.description} – ${tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)} €`;
     li.innerHTML = text;
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'edit-btn';
+    btnEdit.title = 'Modifier';
+    btnEdit.textContent = '✎';
+    btnEdit.addEventListener('click', () => {
+      openEditTransactionModal(tx);
+    });
+    li.appendChild(btnEdit); // Place-le avant/sur la droite du bouton supprimer
     const btn = document.createElement('button');
     btn.className = 'remove-btn';
     btn.textContent = '×';
@@ -469,6 +512,20 @@ function calculateSavings() {
     result.textContent = `Il vous restera ${leftover.toFixed(2)} € après vos dépenses.`;
   }
 }
+function renderPieChart() {
+  const ctx = document.getElementById('pie-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels: expenseCategories, // Array des noms de catégories
+      datasets: [{
+        data: expenseCategories.map(desc => categoryTotals[desc]),
+        backgroundColor: colors.slice(0, expenseCategories.length),
+      }]
+    }
+  });
+}
+
 function exportToJSON() {
   const dataStr = JSON.stringify(transactions, null, 2);
   const blob = new Blob([dataStr], { type: 'application/json' });
@@ -634,3 +691,113 @@ function rgbToHex(rgb) {
   if (!nums) return rgb;
   return "#" + nums.map(x => Number(x).toString(16).padStart(2, "0")).join('');
 }
+function openEditTransactionModal(tx) {
+  // Affiche la modale et pré-remplit le formulaire
+  document.getElementById('modal-edit-transaction').style.display = 'flex';
+  document.getElementById('edit-id').value = tx.id;
+  document.getElementById('edit-description').value = tx.description;
+  document.getElementById('edit-amount').value = tx.amount;
+  document.getElementById('edit-date').value = tx.date;
+  document.getElementById('edit-type').value = tx.type;
+}
+
+document.getElementById('edit-cancel-btn').onclick = function() {
+  document.getElementById('modal-edit-transaction').style.display = 'none';
+};
+
+document.getElementById('edit-transaction-form').onsubmit = function(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-id').value;
+  const description = document.getElementById('edit-description').value;
+  const amount = parseFloat(document.getElementById('edit-amount').value);
+  const date = document.getElementById('edit-date').value;
+  const type = document.getElementById('edit-type').value;
+  // Tu peux compléter ici avec catégorie/recurrence si tu veux
+  const idx = transactions.findIndex(tx => tx.id == id);
+  if (idx !== -1) {
+    transactions[idx].description = description;
+    transactions[idx].amount = amount;
+    transactions[idx].date = date;
+    transactions[idx].type = type;
+    saveTransactionsLocal();
+    if (isDropboxConnected()) saveTransactionsDropbox();
+    updateViews();
+    document.getElementById('modal-edit-transaction').style.display = 'none';
+  }
+};
+document.getElementById('modal-edit-transaction').addEventListener('click', function(e){
+  if(e.target === this) this.style.display = 'none';
+});
+function openAddTransactionModal(dateString) {
+  document.getElementById('modal-add-transaction').style.display = 'flex';
+  document.getElementById('add-date').value = dateString;
+  document.getElementById('add-description').value = '';
+  document.getElementById('add-amount').value = '';
+  document.getElementById('add-type').value = 'expense';
+}
+
+document.getElementById('add-cancel-btn').onclick = function() {
+  document.getElementById('modal-add-transaction').style.display = 'none';
+};
+
+document.getElementById('add-transaction-form').onsubmit = function(e) {
+  e.preventDefault();
+  const description = document.getElementById('add-description').value;
+  const amount = parseFloat(document.getElementById('add-amount').value);
+  const date = document.getElementById('add-date').value;
+  const type = document.getElementById('add-type').value;
+  const tx = {
+    id: Date.now(),
+    type,
+    category: null, // tu peux ajouter un picker ici
+    description,
+    amount,
+    date,
+    recurrence: 'none',
+  };
+  transactions.push(tx);
+  saveTransactionsLocal();
+  if (isDropboxConnected()) saveTransactionsDropbox();
+  updateViews();
+  document.getElementById('modal-add-transaction').style.display = 'none';
+};
+
+document.getElementById('modal-add-transaction').addEventListener('click', function(e){
+  if(e.target === this) this.style.display = 'none';
+});
+function openEditTransactionModal(tx) {
+  document.getElementById('modal-edit-transaction').style.display = 'flex';
+  document.getElementById('edit-id').value = tx.id;
+  document.getElementById('edit-description').value = tx.description;
+  document.getElementById('edit-amount').value = tx.amount;
+  document.getElementById('edit-date').value = tx.date;
+  document.getElementById('edit-type').value = tx.type;
+}
+
+document.getElementById('edit-cancel-btn').onclick = function() {
+  document.getElementById('modal-edit-transaction').style.display = 'none';
+};
+
+document.getElementById('edit-transaction-form').onsubmit = function(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-id').value;
+  const description = document.getElementById('edit-description').value;
+  const amount = parseFloat(document.getElementById('edit-amount').value);
+  const date = document.getElementById('edit-date').value;
+  const type = document.getElementById('edit-type').value;
+  const idx = transactions.findIndex(tx => tx.id == id);
+  if (idx !== -1) {
+    transactions[idx].description = description;
+    transactions[idx].amount = amount;
+    transactions[idx].date = date;
+    transactions[idx].type = type;
+    saveTransactionsLocal();
+    if (isDropboxConnected()) saveTransactionsDropbox();
+    updateViews();
+    document.getElementById('modal-edit-transaction').style.display = 'none';
+  }
+};
+
+document.getElementById('modal-edit-transaction').addEventListener('click', function(e){
+  if(e.target === this) this.style.display = 'none';
+});

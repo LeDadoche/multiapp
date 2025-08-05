@@ -12,6 +12,10 @@
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <!-- Dropbox JS SDK -->
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
+  <!-- Lib Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <canvas id="pie-chart" width="300" height="300"></canvas>
+
 </head>
 <body>
   <header>
@@ -160,5 +164,71 @@
     </div>
   </main>
   <script src="script.js"></script>
+    <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
+    <div class="modal-content">
+      <h3>Modifier la transaction</h3>
+      <form id="edit-transaction-form">
+        <input type="hidden" id="edit-id" />
+        <label>Description :<input type="text" id="edit-description" required /></label>
+        <label>Montant (€) :<input type="number" id="edit-amount" step="0.01" required /></label>
+        <label>Date :<input type="date" id="edit-date" required /></label>
+        <label>Type :
+          <select id="edit-type" required>
+            <option value="expense">Dépense</option>
+            <option value="income">Revenu</option>
+          </select>
+        </label>
+        <!-- Ajoute les autres champs si besoin -->
+        <div style="margin-top:1em;display:flex;gap:1em;">
+          <button type="submit">Enregistrer</button>
+          <button type="button" id="edit-cancel-btn">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Modale Ajout rapide (calendrier) -->
+  <div id="modal-add-transaction" class="modal-bg" style="display:none;">
+    <div class="modal-content">
+      <h3>Ajouter une transaction</h3>
+      <form id="add-transaction-form">
+        <label>Description :<input type="text" id="add-description" required /></label>
+        <label>Montant (€) :<input type="number" id="add-amount" step="0.01" required /></label>
+        <label>Date :<input type="date" id="add-date" required /></label>
+        <label>Type :
+          <select id="add-type" required>
+            <option value="expense">Dépense</option>
+            <option value="income">Revenu</option>
+          </select>
+        </label>
+        <div style="margin-top:1em;display:flex;gap:1em;">
+          <button type="submit">Ajouter</button>
+          <button type="button" id="add-cancel-btn">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modale Edition Historique -->
+  <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
+    <div class="modal-content">
+      <h3>Modifier la transaction</h3>
+      <form id="edit-transaction-form">
+        <input type="hidden" id="edit-id" />
+        <label>Description :<input type="text" id="edit-description" required /></label>
+        <label>Montant (€) :<input type="number" id="edit-amount" step="0.01" required /></label>
+        <label>Date :<input type="date" id="edit-date" required /></label>
+        <label>Type :
+          <select id="edit-type" required>
+            <option value="expense">Dépense</option>
+            <option value="income">Revenu</option>
+          </select>
+        </label>
+        <div style="margin-top:1em;display:flex;gap:1em;">
+          <button type="submit">Enregistrer</button>
+          <button type="button" id="edit-cancel-btn">Annuler</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </body>
 </html>
