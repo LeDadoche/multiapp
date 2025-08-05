@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gestionnaire de finances</title>
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
@@ -15,7 +16,6 @@
 <body>
   <header>
     <h1>Gestionnaire de finances</h1>
-    <br>
     <label class="dark-mode-toggle">
       <input type="checkbox" id="dark-mode-switch" />
       <span class="slider"></span>
@@ -36,7 +36,7 @@
     <div id="tab-transactions" class="tab-content" style="display:block;">
       <section id="form-section">
         <h2>Nouvelle transaction</h2>
-        <form id="transaction-form">
+        <form id="transaction-form" autocomplete="off">
           <div class="form-row">
             <label for="type">Type :</label>
             <select id="type" required>

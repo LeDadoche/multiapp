@@ -1,14 +1,20 @@
 {
   "name": "Gestionnaire de finances",
   "short_name": "Finances",
-  "start_url": "index.html",
+  "description": "Appli perso pour gérer ton budget, synchronisée Dropbox, compatible mobile et mode sombre.",
+  "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#ffffff",
   "theme_color": "#2e7d32",
+  "background_color": "#f5f5f5",
   "icons": [
     {
-      "src": "https://www.firefly-iii.org/img/piggy-bank.png",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
       "type": "image/png"
     }
   ]

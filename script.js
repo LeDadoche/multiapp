@@ -1,6 +1,5 @@
 // --- Configuration Dropbox ---
-const DROPBOX_APP_KEY = "sx9tl18fkusxm05"; // Mets TA clé ici
-# github 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
+const DROPBOX_APP_KEY = "sx9tl18fkusxm05";
 const DROPBOX_FILE = "/transactions.json";
 
 let dbx, accessToken = null;
@@ -11,15 +10,12 @@ function isDropboxConnected() {
   return !!accessToken;
 }
 
-// Authentifie l'utilisateur Dropbox via OAuth2
 function loginDropbox() {
-  // Utilise bien la même URL que dans ta config Dropbox
   const redirectUri = window.location.origin + window.location.pathname;
   const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
   window.location.href = authUrl;
 }
 
-// Cherche le token d'accès dans l'URL (après login)
 function parseDropboxTokenFromUrl() {
   if (window.location.hash.startsWith("#access_token=")) {
     const params = new URLSearchParams(window.location.hash.substr(1));
@@ -29,13 +25,11 @@ function parseDropboxTokenFromUrl() {
   }
 }
 
-// Recharge le token depuis localStorage si présent
 function restoreDropboxSession() {
   const saved = window.localStorage.getItem("dropbox_token");
   if (saved) accessToken = saved;
 }
 
-// Affiche l'état de la connexion
 function updateDropboxStatus() {
   const status = document.getElementById('dropbox-status');
   if (!status) return;
@@ -50,7 +44,6 @@ function updateDropboxStatus() {
   }
 }
 
-// Récupère le fichier JSON depuis Dropbox
 async function loadTransactionsDropbox() {
   try {
     const response = await dbx.filesDownload({path: DROPBOX_FILE});
@@ -65,13 +58,12 @@ async function loadTransactionsDropbox() {
   }
 }
 
-// Sauvegarde le fichier JSON vers Dropbox
 async function saveTransactionsDropbox() {
   try {
     await dbx.filesUpload({
       path: DROPBOX_FILE,
       contents: JSON.stringify(transactions, null, 2),
-                          mode: { ".tag": "overwrite" }
+      mode: { ".tag": "overwrite" }
     });
   } catch (e) {
     alert("Erreur lors de la sauvegarde Dropbox : " + e);
@@ -81,27 +73,27 @@ async function saveTransactionsDropbox() {
 // --- Picker Catégorie (identique à avant) ---
 const CATEGORY_ICONS = [
   { type: 'fa', icon: 'fa-utensils', label: 'Repas' },
-{ type: 'fa', icon: 'fa-cart-shopping', label: 'Courses' },
-{ type: 'fa', icon: 'fa-car', label: 'Transport' },
-{ type: 'fa', icon: 'fa-house', label: 'Logement' },
-{ type: 'fa', icon: 'fa-film', label: 'Loisirs' },
-{ type: 'fa', icon: 'fa-medkit', label: 'Santé' },
-{ type: 'fa', icon: 'fa-graduation-cap', label: 'Éducation' },
-{ type: 'fa', icon: 'fa-gas-pump', label: 'Essence' },
-{ type: 'fa', icon: 'fa-dog', label: 'Animaux' },
-{ type: 'fa', icon: 'fa-gift', label: 'Cadeaux' },
-{ type: 'fa', icon: 'fa-sack-dollar', label: 'Salaire' },
-{ type: 'fa', icon: 'fa-phone', label: 'Téléphone' },
-{ type: 'mi', icon: 'savings', label: 'Épargne' },
-{ type: 'mi', icon: 'subscriptions', label: 'Abonnements' },
-{ type: 'mi', icon: 'sports_esports', label: 'Jeux' },
-{ type: 'mi', icon: 'flight', label: 'Voyage' },
-{ type: 'mi', icon: 'pets', label: 'Animaux' },
-{ type: 'mi', icon: 'restaurant', label: 'Restaurant' },
-{ type: 'mi', icon: 'store', label: 'Magasin' },
-{ type: 'mi', icon: 'health_and_safety', label: 'Santé' },
-{ type: 'mi', icon: 'directions_car', label: 'Voiture' },
-{ type: 'mi', icon: 'home', label: 'Maison' },
+  { type: 'fa', icon: 'fa-cart-shopping', label: 'Courses' },
+  { type: 'fa', icon: 'fa-car', label: 'Transport' },
+  { type: 'fa', icon: 'fa-house', label: 'Logement' },
+  { type: 'fa', icon: 'fa-film', label: 'Loisirs' },
+  { type: 'fa', icon: 'fa-medkit', label: 'Santé' },
+  { type: 'fa', icon: 'fa-graduation-cap', label: 'Éducation' },
+  { type: 'fa', icon: 'fa-gas-pump', label: 'Essence' },
+  { type: 'fa', icon: 'fa-dog', label: 'Animaux' },
+  { type: 'fa', icon: 'fa-gift', label: 'Cadeaux' },
+  { type: 'fa', icon: 'fa-sack-dollar', label: 'Salaire' },
+  { type: 'fa', icon: 'fa-phone', label: 'Téléphone' },
+  { type: 'mi', icon: 'savings', label: 'Épargne' },
+  { type: 'mi', icon: 'subscriptions', label: 'Abonnements' },
+  { type: 'mi', icon: 'sports_esports', label: 'Jeux' },
+  { type: 'mi', icon: 'flight', label: 'Voyage' },
+  { type: 'mi', icon: 'pets', label: 'Animaux' },
+  { type: 'mi', icon: 'restaurant', label: 'Restaurant' },
+  { type: 'mi', icon: 'store', label: 'Magasin' },
+  { type: 'mi', icon: 'health_and_safety', label: 'Santé' },
+  { type: 'mi', icon: 'directions_car', label: 'Voiture' },
+  { type: 'mi', icon: 'home', label: 'Maison' },
 ];
 
 function renderCategoryPicker() {
@@ -137,7 +129,6 @@ function loadTransactionsLocal() {
   }
 }
 
-// Ajout d'une transaction (identique à avant)
 function addTransaction(event) {
   event.preventDefault();
   const type = document.getElementById('type').value;
@@ -190,8 +181,7 @@ function addTransaction(event) {
   document.getElementById('selected-category').innerHTML = '';
 }
 
-// Les autres fonctions (affichage, calcul, onglets, mode sombre) restent identiques.
-
+// --- Utilitaires et fonctions d’affichage (mets ici ton code existant) ---
 function addMonths(date, months) { /* ... */ }
 function formatDate(date) { /* ... */ }
 function transactionsForDay(dateString) { /* ... */ }
@@ -207,6 +197,7 @@ function updateViews() {
   renderStats();
 }
 
+// --- INIT PRINCIPALE ---
 document.addEventListener('DOMContentLoaded', () => {
   parseDropboxTokenFromUrl();
   restoreDropboxSession();
@@ -231,17 +222,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!e.target.closest('.category-picker')) picker.style.display = 'none';
   });
 
-    const recSel = document.getElementById('recurrence');
-    if (recSel) {
-      recSel.addEventListener('change', e => {
-        const val = e.target.value;
-        const row = document.getElementById('installments-row');
-        if (row) row.style.display = val === 'installments' ? 'flex' : 'none';
-      });
-    }
-    const txForm = document.getElementById('transaction-form');
-    if (txForm) txForm.addEventListener('submit', addTransaction);
-    const prevBtn = document.getElementById('prev-month');
+  const recSel = document.getElementById('recurrence');
+  if (recSel) {
+    recSel.addEventListener('change', e => {
+      const val = e.target.value;
+      const row = document.getElementById('installments-row');
+      if (row) row.style.display = val === 'installments' ? 'flex' : 'none';
+    });
+  }
+  const txForm = document.getElementById('transaction-form');
+  if (txForm) txForm.addEventListener('submit', addTransaction);
+  const prevBtn = document.getElementById('prev-month');
   if (prevBtn) prevBtn.addEventListener('click', () => {
     currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
     renderCalendar();
@@ -265,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // --- MODE SOMBRE --- (corrigé, FIABLE)
   const darkModeSwitch = document.getElementById('dark-mode-switch');
   if (localStorage.getItem('darkMode') === 'true') {
     document.body.classList.add('dark-mode');
