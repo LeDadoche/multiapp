@@ -476,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
   parseDropboxTokenFromUrl();
   restoreDropboxSession();
   if (isDropboxConnected()) {
-    dbx = new Dropbox.Dropbox({ accessToken: accessToken, fetch: fetch });
+    dbx = new Dropbox.Dropbox({ accessToken: accessToken });
     loadTransactionsDropbox();
   } else {
     loadTransactionsLocal();
