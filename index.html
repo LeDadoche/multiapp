@@ -25,106 +25,137 @@
     <span id="dropbox-status" style="font-weight:bold;margin-left:10px;"></span>
   </header>
   <main>
-    <!-- Onglets -->
-    <nav class="tabs">
-      <button class="tab-btn active" data-tab="tab-transactions">Transactions</button>
-      <button class="tab-btn" data-tab="tab-stats">Statistiques</button>
-      <button class="tab-btn" data-tab="tab-history">Historique</button>
-    </nav>
-
-    <!-- Onglet Transactions -->
-    <div id="tab-transactions" class="tab-content" style="display:block;">
-      <section id="form-section">
-        <h2>Nouvelle transaction</h2>
-        <form id="transaction-form" autocomplete="off">
-          <div class="form-row">
-            <label for="type">Type :</label>
-            <select id="type" required>
-              <option value="income">Revenu</option>
-              <option value="expense">Dépense</option>
-            </select>
-          </div>
-          <div class="form-row">
-            <label for="category">Catégorie :</label>
-            <div id="category-picker" class="category-picker">
-              <input type="hidden" id="category" name="category" required>
-              <span id="selected-category" class="category-icon-preview" title="Clique pour choisir"></span>
-              <div id="category-dropdown" class="category-dropdown"></div>
+    <div class="main-container">
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-transactions">Transactions</button>
+        <button class="tab-btn" data-tab="tab-stats">Statistiques</button>
+        <button class="tab-btn" data-tab="tab-history">Historique</button>
+      </nav>
+      <!-- Onglet Transactions -->
+      <div id="tab-transactions" class="tab-content" style="display:block;">
+        <section id="form-section">
+          <h2>Nouvelle transaction</h2>
+          <form id="transaction-form" autocomplete="off">
+            <div class="form-row">
+              <label for="type">Type :</label>
+              <select id="type" required>
+                <option value="expense">Dépense</option>
+                <option value="income">Revenu</option>
+              </select>
             </div>
+            <div class="form-row">
+              <label for="category">Catégorie :</label>
+              <div id="category-picker" class="category-picker">
+                <input type="hidden" id="category" name="category" required>
+                <span id="selected-category" class="category-icon-preview" title="Clique pour choisir" data-placeholder="1"></span>
+                <div id="category-dropdown" class="category-dropdown"></div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="description">Description :</label>
+              <input type="text" id="description" required />
+            </div>
+            <div class="form-row">
+              <label for="amount">Montant (€) :</label>
+              <input type="number" id="amount" step="0.01" required />
+            </div>
+            <div class="form-row">
+              <label for="date">Date :</label>
+              <input type="date" id="date" required />
+            </div>
+            <div class="form-row">
+              <label for="recurrence">Récurrence :</label>
+              <select id="recurrence">
+                <option value="none">Aucune</option>
+                <option value="monthly">Mensuelle</option>
+                <option value="installments">Paiement en X fois</option>
+              </select>
+            </div>
+            <div class="form-row" id="installments-row" style="display: none;">
+              <label for="installments">Nombre d'échéances :</label>
+              <input type="number" id="installments" min="2" max="24" />
+            </div>
+            <div class="form-row">
+              <button type="submit">Ajouter</button>
+            </div>
+          </form>
+        </section>
+        <section id="salary-section">
+          <h2>Salaire et économies</h2>
+          <div class="form-row">
+            <label for="salary">Salaire mensuel (€) :</label>
+            <input type="number" id="salary" step="0.01" />
           </div>
           <div class="form-row">
-            <label for="description">Description :</label>
-            <input type="text" id="description" required />
+            <label for="savings">Épargne désirée (€) :</label>
+            <input type="number" id="savings" step="0.01" />
           </div>
           <div class="form-row">
-            <label for="amount">Montant (€) :</label>
-            <input type="number" id="amount" step="0.01" required />
+            <button id="calculate-saving">Calculer le reste à vivre</button>
           </div>
-          <div class="form-row">
-            <label for="date">Date :</label>
-            <input type="date" id="date" required />
+          <p id="saving-result"></p>
+        </section>
+        <section id="calendar-section">
+          <h2>Calendrier</h2>
+          <div class="calendar-layout">
+            <div class="calendar-wrapper">
+              <div class="calendar-nav sticky-nav">
+                <button id="prev-month" aria-label="Mois précédent"><i class="fa-solid fa-arrow-left"></i></button>
+                <span id="current-month"></span>
+                <button id="next-month" aria-label="Mois suivant"><i class="fa-solid fa-arrow-right"></i></button>
+                <button id="go-today" aria-label="Revenir à aujourd'hui" title="Revenir à aujourd'hui"><i class="fa-solid fa-calendar-day"></i> Aujourd'hui</button>
+              </div>
+              <table id="calendar"></table>
+              <div id="day-details"></div>
+            </div>
+            <!-- Légende juste à droite du calendrier -->
+            <aside class="legend-container" id="legend-container">
+              <div class="legend-title">Légende calendrier</div>
+              <ul class="legend-list">
+                <li class="legend-item">
+                  <span class="legend-color" style="background:var(--color-weekend)" data-var="--color-weekend"></span>
+                  <i class="fa-solid fa-rotate-left legend-reset" data-var="--color-weekend" title="Remettre par défaut"></i>
+                  <span class="legend-label">Week-end</span>
+                </li>
+                <li class="legend-item">
+                  <span class="legend-color" style="background:var(--color-holiday)" data-var="--color-holiday"></span>
+                  <i class="fa-solid fa-rotate-left legend-reset" data-var="--color-holiday" title="Remettre par défaut"></i>
+                  <span class="legend-label">Jour férié</span>
+                </li>
+                <li class="legend-item">
+                  <span class="legend-color" style="background:var(--color-today)" data-var="--color-today"></span>
+                  <i class="fa-solid fa-rotate-left legend-reset" data-var="--color-today" title="Remettre par défaut"></i>
+                  <span class="legend-label">Aujourd'hui</span>
+                </li>
+                <li class="legend-item">
+                  <span class="legend-color" style="background:var(--color-primary)" data-var="--color-primary"></span>
+                  <i class="fa-solid fa-rotate-left legend-reset" data-var="--color-primary" title="Remettre par défaut"></i>
+                  <span class="legend-label">Sélection/Navigation</span>
+                </li>
+              </ul>
+            </aside>
           </div>
-          <div class="form-row">
-            <label for="recurrence">Récurrence :</label>
-            <select id="recurrence">
-              <option value="none">Aucune</option>
-              <option value="monthly">Mensuelle</option>
-              <option value="installments">Paiement en X fois</option>
-            </select>
-          </div>
-          <div class="form-row" id="installments-row" style="display: none;">
-            <label for="installments">Nombre d'échéances :</label>
-            <input type="number" id="installments" min="2" max="24" />
-          </div>
-          <div class="form-row">
-            <button type="submit">Ajouter</button>
-          </div>
-        </form>
-      </section>
-      <section id="salary-section">
-        <h2>Salaire et économies</h2>
-        <div class="form-row">
-          <label for="salary">Salaire mensuel (€) :</label>
-          <input type="number" id="salary" step="0.01" />
-        </div>
-        <div class="form-row">
-          <label for="savings">Épargne désirée (€) :</label>
-          <input type="number" id="savings" step="0.01" />
-        </div>
-        <div class="form-row">
-          <button id="calculate-saving">Calculer le reste à vivre</button>
-        </div>
-        <p id="saving-result"></p>
-      </section>
-      <section id="calendar-section">
-        <h2>Calendrier</h2>
-        <div class="calendar-nav">
-          <button id="prev-month">&lt; Mois précédent</button>
-          <span id="current-month"></span>
-          <button id="next-month">Mois suivant &gt;</button>
-        </div>
-        <table id="calendar"></table>
-        <div id="day-details"></div>
-      </section>
-    </div>
-    <!-- Onglet Statistiques -->
-    <div id="tab-stats" class="tab-content" style="display:none;">
-      <section id="stats-section">
-        <h2>Statistiques</h2>
-        <div id="chart-container"></div>
-        <p id="stats-info"></p>
-      </section>
-    </div>
-    <!-- Onglet Historique -->
-    <div id="tab-history" class="tab-content" style="display:none;">
-      <section id="transactions-section">
-        <h2>Liste des transactions</h2>
-        <ul id="transactions-list"></ul>
-      </section>
-      <section id="export-section">
-        <h2>Exportation</h2>
-        <button id="export-json">Exporter en JSON</button>
-      </section>
+        </section>
+      </div>
+      <!-- Onglet Statistiques -->
+      <div id="tab-stats" class="tab-content" style="display:none;">
+        <section id="stats-section">
+          <h2>Statistiques</h2>
+          <div id="chart-container"></div>
+          <p id="stats-info"></p>
+        </section>
+      </div>
+      <!-- Onglet Historique -->
+      <div id="tab-history" class="tab-content" style="display:none;">
+        <section id="transactions-section">
+          <h2>Liste des transactions</h2>
+          <ul id="transactions-list"></ul>
+        </section>
+        <section id="export-section">
+          <h2>Exportation</h2>
+          <button id="export-json">Exporter en JSON</button>
+        </section>
+      </div>
     </div>
   </main>
   <script src="script.js"></script>
