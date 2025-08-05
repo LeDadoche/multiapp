@@ -108,8 +108,9 @@ async function saveTransactionsDropbox() {
       mode: { ".tag": "overwrite" }
     });
   } catch (e) {
-    alert("Erreur lors de la sauvegarde Dropbox : " + e);
-  }
+  alert("Erreur lors de la sauvegarde Dropbox : " + JSON.stringify(e.error || e));
+  throw e;
+}
 }
 
 // --- Picker Catégorie
