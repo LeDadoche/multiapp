@@ -33,9 +33,9 @@ const FRENCH_HOLIDAYS = (year) => ({
   ...(() => {
     function calcEaster(year) {
       const f = Math.floor, G = year % 19, C = f(year / 100), H = (C - f(C / 4) - f((8*C+13)/25) + 19*G + 15) % 30,
-            I = H - f(H/28)*(1 - f(29/(H+1))*f((21-G)/11)),
-            J = (year + f(year/4) + I + 2 - C + f(C/4)) % 7,
-            L = I - J, month = 3 + f((L+40)/44), day = L + 28 - 31*f(month/4);
+      I = H - f(H/28)*(1 - f(29/(H+1))*f((21-G)/11)),
+      J = (year + f(year/4) + I + 2 - C + f(C/4)) % 7,
+      L = I - J, month = 3 + f((L+40)/44), day = L + 28 - 31*f(month/4);
       return new Date(year, month-1, day);
     }
     let y = year;
@@ -120,38 +120,38 @@ async function saveTransactionsDropbox() {
     await dbx.filesUpload({
       path: DROPBOX_FILE,
       contents: JSON.stringify(transactions, null, 2),
-      mode: { ".tag": "overwrite" }
+                          mode: { ".tag": "overwrite" }
     });
   } catch (e) {
-  alert("Erreur lors de la sauvegarde Dropbox : " + JSON.stringify(e.error || e));
-  throw e;
-}
+    alert("Erreur lors de la sauvegarde Dropbox : " + JSON.stringify(e.error || e));
+    throw e;
+  }
 }
 
 // --- Picker Catégorie
 const CATEGORY_ICONS = [
   { type: 'fa', icon: 'fa-utensils', label: 'Repas' },
-  { type: 'fa', icon: 'fa-cart-shopping', label: 'Courses' },
-  { type: 'fa', icon: 'fa-car', label: 'Transport' },
-  { type: 'fa', icon: 'fa-house', label: 'Logement' },
-  { type: 'fa', icon: 'fa-film', label: 'Loisirs' },
-  { type: 'fa', icon: 'fa-medkit', label: 'Santé' },
-  { type: 'fa', icon: 'fa-graduation-cap', label: 'Éducation' },
-  { type: 'fa', icon: 'fa-gas-pump', label: 'Essence' },
-  { type: 'fa', icon: 'fa-dog', label: 'Animaux' },
-  { type: 'fa', icon: 'fa-gift', label: 'Cadeaux' },
-  { type: 'fa', icon: 'fa-sack-dollar', label: 'Salaire' },
-  { type: 'fa', icon: 'fa-phone', label: 'Téléphone' },
-  { type: 'mi', icon: 'savings', label: 'Épargne' },
-  { type: 'mi', icon: 'subscriptions', label: 'Abonnements' },
-  { type: 'mi', icon: 'sports_esports', label: 'Jeux' },
-  { type: 'mi', icon: 'flight', label: 'Voyage' },
-  { type: 'mi', icon: 'pets', label: 'Animaux' },
-  { type: 'mi', icon: 'restaurant', label: 'Restaurant' },
-  { type: 'mi', icon: 'store', label: 'Magasin' },
-  { type: 'mi', icon: 'health_and_safety', label: 'Santé' },
-  { type: 'mi', icon: 'directions_car', label: 'Voiture' },
-  { type: 'mi', icon: 'home', label: 'Maison' },
+{ type: 'fa', icon: 'fa-cart-shopping', label: 'Courses' },
+{ type: 'fa', icon: 'fa-car', label: 'Transport' },
+{ type: 'fa', icon: 'fa-house', label: 'Logement' },
+{ type: 'fa', icon: 'fa-film', label: 'Loisirs' },
+{ type: 'fa', icon: 'fa-medkit', label: 'Santé' },
+{ type: 'fa', icon: 'fa-graduation-cap', label: 'Éducation' },
+{ type: 'fa', icon: 'fa-gas-pump', label: 'Essence' },
+{ type: 'fa', icon: 'fa-dog', label: 'Animaux' },
+{ type: 'fa', icon: 'fa-gift', label: 'Cadeaux' },
+{ type: 'fa', icon: 'fa-sack-dollar', label: 'Salaire' },
+{ type: 'fa', icon: 'fa-phone', label: 'Téléphone' },
+{ type: 'mi', icon: 'savings', label: 'Épargne' },
+{ type: 'mi', icon: 'subscriptions', label: 'Abonnements' },
+{ type: 'mi', icon: 'sports_esports', label: 'Jeux' },
+{ type: 'mi', icon: 'flight', label: 'Voyage' },
+{ type: 'mi', icon: 'pets', label: 'Animaux' },
+{ type: 'mi', icon: 'restaurant', label: 'Restaurant' },
+{ type: 'mi', icon: 'store', label: 'Magasin' },
+{ type: 'mi', icon: 'health_and_safety', label: 'Santé' },
+{ type: 'mi', icon: 'directions_car', label: 'Voiture' },
+{ type: 'mi', icon: 'home', label: 'Maison' },
 ];
 function renderCategoryPicker() {
   const picker = document.getElementById('category-dropdown');
@@ -253,7 +253,7 @@ function transactionsForDay(dateString) {
       if (
         txDate.getDate() === day &&
         (selectedDate.getFullYear() > txDate.getFullYear() ||
-         (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+        (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
       ) {
         list.push({ ...tx, date: formatDate(selectedDate) });
       }
@@ -390,7 +390,7 @@ function transactionsForDay(dateString) {
       if (
         txDate.getDate() === day &&
         (selectedDate.getFullYear() > txDate.getFullYear() ||
-         (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+        (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
       ) {
         list.push({ ...tx, date: formatDate(selectedDate) });
       }
@@ -457,7 +457,7 @@ function renderStats() {
     }
   }
   const expenseCategories = Object.keys(categoryTotals).filter(desc =>
-    transactions.some(tx => tx.description === desc && tx.type === 'expense')
+  transactions.some(tx => tx.description === desc && tx.type === 'expense')
   );
   expenseCategories.sort((a,b) => categoryTotals[b] - categoryTotals[a]);
   const maxVal = Math.max(...expenseCategories.map(desc => categoryTotals[desc]), 0);
@@ -480,8 +480,8 @@ function renderStats() {
   });
   const statsInfo = document.getElementById('stats-info');
   statsInfo.innerHTML = `<strong>Total revenus :</strong> ${totalIncome.toFixed(2)} €<br>` +
-    `<strong>Total dépenses :</strong> ${totalExpense.toFixed(2)} €<br>` +
-    `<strong>Solde :</strong> ${(totalIncome - totalExpense).toFixed(2)} €`;
+  `<strong>Total dépenses :</strong> ${totalExpense.toFixed(2)} €<br>` +
+  `<strong>Solde :</strong> ${(totalIncome - totalExpense).toFixed(2)} €`;
 }
 function calculateSavings() {
   const salaryVal = parseFloat(document.getElementById('salary').value);
@@ -520,7 +520,7 @@ function renderPieChart() {
       labels: expenseCategories, // Array des noms de catégories
       datasets: [{
         data: expenseCategories.map(desc => categoryTotals[desc]),
-        backgroundColor: colors.slice(0, expenseCategories.length),
+            backgroundColor: colors.slice(0, expenseCategories.length),
       }]
     }
   });
@@ -570,118 +570,118 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', e => {
     if (!e.target.closest('.category-picker')) picker.style.display = 'none';
   });
-  document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
-  document.getElementById('recurrence').addEventListener('change', e => {
-    const val = e.target.value;
-    const row = document.getElementById('installments-row');
-    if (row) row.style.display = val === 'installments' ? 'flex' : 'none';
-  });
-  document.getElementById('transaction-form').addEventListener('submit', addTransaction);
-  document.getElementById('prev-month').addEventListener('click', () => {
-    currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
-    renderCalendar();
-  });
-  document.getElementById('next-month').addEventListener('click', () => {
-    currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-    renderCalendar();
-  });
-  document.getElementById('go-today').addEventListener('click', () => {
-  currentMonth = new Date();
-  updateViews();
-  });
-  document.getElementById('calculate-saving').addEventListener('click', calculateSavings);
-  document.getElementById('export-json').addEventListener('click', exportToJSON);
-
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
-      btn.classList.add('active');
-      document.getElementById(btn.dataset.tab).style.display = 'block';
+    document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
+    document.getElementById('recurrence').addEventListener('change', e => {
+      const val = e.target.value;
+      const row = document.getElementById('installments-row');
+      if (row) row.style.display = val === 'installments' ? 'flex' : 'none';
     });
-  });
-
-  // --- MODE SOMBRE ---
-  const darkModeSwitch = document.getElementById('dark-mode-switch');
-  if (localStorage.getItem('darkMode') === 'true') {
-    document.body.classList.add('dark-mode');
-    darkModeSwitch.checked = true;
-  }
-  darkModeSwitch.addEventListener('change', function() {
-  if (darkModeSwitch.checked) {
-    document.body.classList.add('dark-mode');
-    localStorage.setItem('darkMode', 'true');
-  } else {
-    document.body.classList.remove('dark-mode');
-    localStorage.setItem('darkMode', 'false');
-  }
-  updateLegendColors(true); // ← IMPORTANT : force le changement de palette
-  renderCalendar();
-});
-
-function updateLegendColors(force = false) {
-  const isDark = document.body.classList.contains('dark-mode');
-  const defs = isDark ? DEFAULT_COLORS_DARK : DEFAULT_COLORS_LIGHT;
-
-  document.querySelectorAll('.legend-color').forEach(span => {
-    const v = span.dataset.var;
-    let current = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-
-    // Si force (changement de thème), ou la couleur correspond à celle du thème précédent
-    if (force || current === (isDark ? DEFAULT_COLORS_LIGHT[v] : DEFAULT_COLORS_DARK[v])) {
-      document.documentElement.style.setProperty(v, defs[v]);
-      span.style.background = defs[v];
-    } else {
-      // Sinon, laisse la couleur personnalisée
-      span.style.background = current;
-    }
-  });
-}
-
-const DEFAULT_COLORS_LIGHT = {
-  '--color-weekend': '#d1ecfb',
-  '--color-holiday': '#fffbe6',
-  '--color-today': '#fda7a7',
-  '--color-primary': '#65b8f7',
-};
-const DEFAULT_COLORS_DARK = {
-  '--color-weekend': '#23373a',    // doux bleu-vert
-  '--color-holiday': '#40361a',    // marron chaud doux
-  '--color-today': '#6c464e',      // prune douce
-  '--color-primary': '#27524b',    // ton vert demandé
-};
-document.querySelectorAll('.legend-reset').forEach(resetBtn => {
-  resetBtn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    const v = resetBtn.dataset.var;
-    const isDark = document.body.classList.contains('dark-mode');
-    const defColor = isDark ? DEFAULT_COLORS_DARK[v] : DEFAULT_COLORS_LIGHT[v];
-    document.documentElement.style.setProperty(v, defColor);
-    document.querySelectorAll(`.legend-color[data-var="${v}"]`).forEach(
-      el => el.style.background = defColor
-    );
-    renderCalendar();
-  });
-});
-
-  // --- Couleurs légende calendrier
-  document.querySelectorAll('.legend-color').forEach(span => {
-    span.addEventListener('click', function(e) {
-      e.stopPropagation();
-      let color = getComputedStyle(document.documentElement).getPropertyValue(span.dataset.var).trim();
-      const input = document.createElement('input');
-      input.type = 'color';
-      input.value = rgbToHex(color);
-      input.style.display = 'block';
-      input.addEventListener('input', () => {
-        document.documentElement.style.setProperty(span.dataset.var, input.value);
-        span.style.background = input.value;
+      document.getElementById('transaction-form').addEventListener('submit', addTransaction);
+      document.getElementById('prev-month').addEventListener('click', () => {
+        currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
         renderCalendar();
       });
-      input.click();
-      setTimeout(() => input.remove(), 300);
-    });
-  });
+      document.getElementById('next-month').addEventListener('click', () => {
+        currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+        renderCalendar();
+      });
+      document.getElementById('go-today').addEventListener('click', () => {
+        currentMonth = new Date();
+        updateViews();
+      });
+      document.getElementById('calculate-saving').addEventListener('click', calculateSavings);
+      document.getElementById('export-json').addEventListener('click', exportToJSON);
+
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
+          btn.classList.add('active');
+          document.getElementById(btn.dataset.tab).style.display = 'block';
+        });
+      });
+
+      // --- MODE SOMBRE ---
+      const darkModeSwitch = document.getElementById('dark-mode-switch');
+      if (localStorage.getItem('darkMode') === 'true') {
+        document.body.classList.add('dark-mode');
+        darkModeSwitch.checked = true;
+      }
+      darkModeSwitch.addEventListener('change', function() {
+        if (darkModeSwitch.checked) {
+          document.body.classList.add('dark-mode');
+          localStorage.setItem('darkMode', 'true');
+        } else {
+          document.body.classList.remove('dark-mode');
+          localStorage.setItem('darkMode', 'false');
+        }
+        updateLegendColors(true); // ← IMPORTANT : force le changement de palette
+        renderCalendar();
+      });
+
+      function updateLegendColors(force = false) {
+        const isDark = document.body.classList.contains('dark-mode');
+        const defs = isDark ? DEFAULT_COLORS_DARK : DEFAULT_COLORS_LIGHT;
+
+        document.querySelectorAll('.legend-color').forEach(span => {
+          const v = span.dataset.var;
+          let current = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+          // Si force (changement de thème), ou la couleur correspond à celle du thème précédent
+          if (force || current === (isDark ? DEFAULT_COLORS_LIGHT[v] : DEFAULT_COLORS_DARK[v])) {
+            document.documentElement.style.setProperty(v, defs[v]);
+            span.style.background = defs[v];
+          } else {
+            // Sinon, laisse la couleur personnalisée
+            span.style.background = current;
+          }
+        });
+      }
+
+      const DEFAULT_COLORS_LIGHT = {
+        '--color-weekend': '#d1ecfb',
+        '--color-holiday': '#fffbe6',
+        '--color-today': '#fda7a7',
+        '--color-primary': '#65b8f7',
+      };
+      const DEFAULT_COLORS_DARK = {
+        '--color-weekend': '#23373a',    // doux bleu-vert
+        '--color-holiday': '#40361a',    // marron chaud doux
+        '--color-today': '#6c464e',      // prune douce
+        '--color-primary': '#27524b',    // ton vert demandé
+      };
+      document.querySelectorAll('.legend-reset').forEach(resetBtn => {
+        resetBtn.addEventListener('click', function(e) {
+          e.stopPropagation();
+          const v = resetBtn.dataset.var;
+          const isDark = document.body.classList.contains('dark-mode');
+          const defColor = isDark ? DEFAULT_COLORS_DARK[v] : DEFAULT_COLORS_LIGHT[v];
+          document.documentElement.style.setProperty(v, defColor);
+          document.querySelectorAll(`.legend-color[data-var="${v}"]`).forEach(
+            el => el.style.background = defColor
+          );
+          renderCalendar();
+        });
+      });
+
+      // --- Couleurs légende calendrier
+      document.querySelectorAll('.legend-color').forEach(span => {
+        span.addEventListener('click', function(e) {
+          e.stopPropagation();
+          let color = getComputedStyle(document.documentElement).getPropertyValue(span.dataset.var).trim();
+          const input = document.createElement('input');
+          input.type = 'color';
+          input.value = rgbToHex(color);
+          input.style.display = 'block';
+          input.addEventListener('input', () => {
+            document.documentElement.style.setProperty(span.dataset.var, input.value);
+            span.style.background = input.value;
+            renderCalendar();
+          });
+          input.click();
+          setTimeout(() => input.remove(), 300);
+        });
+      });
 });
 
 // Petit utilitaire pour convertir rgb en hex
@@ -797,7 +797,12 @@ document.getElementById('edit-transaction-form').onsubmit = function(e) {
     document.getElementById('modal-edit-transaction').style.display = 'none';
   }
 };
-
-document.getElementById('modal-edit-transaction').addEventListener('click', function(e){
+// === FERMETURE MODALE AJOUT RAPIDE (DOUBLE-CLICK CALENDRIER) ===
+document.getElementById('modal-add-transaction').addEventListener('click', function(e){
+  // Clique sur le fond (arrière-plan) : ferme la modale
   if(e.target === this) this.style.display = 'none';
 });
+document.getElementById('add-cancel-btn').onclick = function() {
+  // Clique sur "Annuler" : ferme la modale
+  document.getElementById('modal-add-transaction').style.display = 'none';
+};

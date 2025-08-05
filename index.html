@@ -14,7 +14,6 @@
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
   <!-- Lib Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <canvas id="pie-chart" width="300" height="300"></canvas>
 
 </head>
 <body>
@@ -146,10 +145,13 @@
       <div id="tab-stats" class="tab-content" style="display:none;">
         <section id="stats-section">
           <h2>Statistiques</h2>
-          <div id="chart-container"></div>
+          <div id="chart-container">
+            <canvas id="pie-chart" width="300" height="300"></canvas>
+          </div>
           <p id="stats-info"></p>
         </section>
       </div>
+
       <!-- Onglet Historique -->
       <div id="tab-history" class="tab-content" style="display:none;">
         <section id="transactions-section">
@@ -163,29 +165,6 @@
       </div>
     </div>
   </main>
-  <script src="script.js"></script>
-    <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
-    <div class="modal-content">
-      <h3>Modifier la transaction</h3>
-      <form id="edit-transaction-form">
-        <input type="hidden" id="edit-id" />
-        <label>Description :<input type="text" id="edit-description" required /></label>
-        <label>Montant (€) :<input type="number" id="edit-amount" step="0.01" required /></label>
-        <label>Date :<input type="date" id="edit-date" required /></label>
-        <label>Type :
-          <select id="edit-type" required>
-            <option value="expense">Dépense</option>
-            <option value="income">Revenu</option>
-          </select>
-        </label>
-        <!-- Ajoute les autres champs si besoin -->
-        <div style="margin-top:1em;display:flex;gap:1em;">
-          <button type="submit">Enregistrer</button>
-          <button type="button" id="edit-cancel-btn">Annuler</button>
-        </div>
-      </form>
-    </div>
-  </div>
   <!-- Modale Ajout rapide (calendrier) -->
   <div id="modal-add-transaction" class="modal-bg" style="display:none;">
     <div class="modal-content">
@@ -230,5 +209,6 @@
       </form>
     </div>
   </div>
+<script src="script.js"></script>
 </body>
 </html>
