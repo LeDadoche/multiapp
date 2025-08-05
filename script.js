@@ -1,6 +1,6 @@
 // --- Configuration Dropbox ---
 const DROPBOX_APP_KEY = "sx9tl18fkusxm05";
-const DROPBOX_FILE = "/transactions.json";
+const DROPBOX_FILE = "transactions.json";
 
 let dbx, accessToken = null;
 let transactions = [];
