@@ -76,17 +76,32 @@ function restoreDropboxSession() {
 }
 function updateDropboxStatus() {
   const status = document.getElementById('dropbox-status');
+  const logoutBtn = document.getElementById('dropbox-logout');
+  const loginBtn = document.getElementById('dropbox-login');
   if (!status) return;
   if (isDropboxConnected()) {
     status.textContent = "Connecté à Dropbox";
     status.style.color = "#27524b";
-    document.getElementById('dropbox-login').style.display = "none";
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "";
   } else {
     status.textContent = "Non connecté";
     status.style.color = "#d32f2f";
-    document.getElementById('dropbox-login').style.display = "";
+    loginBtn.style.display = "";
+    logoutBtn.style.display = "none";
   }
 }
+
+// Handler déconnexion
+function logoutDropbox() {
+  accessToken = null;
+  localStorage.removeItem('dropbox_token');
+  updateDropboxStatus();
+  // On repasse en local uniquement
+  loadTransactionsLocal();
+  updateViews();
+}
+
 async function loadTransactionsDropbox() {
   try {
     const response = await dbx.filesDownload({path: DROPBOX_FILE});
@@ -498,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', e => {
     if (!e.target.closest('.category-picker')) picker.style.display = 'none';
   });
-
+  document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
   document.getElementById('recurrence').addEventListener('change', e => {
     const val = e.target.value;
     const row = document.getElementById('installments-row');
