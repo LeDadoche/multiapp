@@ -126,6 +126,7 @@ async function saveTransactionsDropbox() {
     alert("Erreur lors de la sauvegarde Dropbox : " + JSON.stringify(e.error || e));
     throw e;
   }
+<<<<<<< HEAD
 }
 
 // --- Picker Catégorie
@@ -153,26 +154,108 @@ const CATEGORY_ICONS = [
 { type: 'mi', icon: 'directions_car', label: 'Voiture' },
 { type: 'mi', icon: 'home', label: 'Maison' },
 ];
+=======
+}
+
+// --- Picker Catégorie à onglets ---
+
+// Font Awesome, Material, Bootstrap
+const CATEGORY_ICONS = {
+  fa: [
+    { type: 'fa', icon: 'fa-utensils', label: 'Repas' },
+    { type: 'fa', icon: 'fa-cart-shopping', label: 'Courses' },
+    { type: 'fa', icon: 'fa-car', label: 'Transport' },
+    { type: 'fa', icon: 'fa-house', label: 'Logement' },
+    { type: 'fa', icon: 'fa-film', label: 'Loisirs' },
+    { type: 'fa', icon: 'fa-medkit', label: 'Santé' },
+    { type: 'fa', icon: 'fa-graduation-cap', label: 'Éducation' },
+    { type: 'fa', icon: 'fa-gas-pump', label: 'Essence' },
+    { type: 'fa', icon: 'fa-dog', label: 'Animaux' },
+    { type: 'fa', icon: 'fa-gift', label: 'Cadeaux' },
+    { type: 'fa', icon: 'fa-sack-dollar', label: 'Salaire' },
+    { type: 'fa', icon: 'fa-phone', label: 'Téléphone' }
+  ],
+  mi: [
+    { type: 'mi', icon: 'savings', label: 'Épargne' },
+    { type: 'mi', icon: 'subscriptions', label: 'Abonnements' },
+    { type: 'mi', icon: 'sports_esports', label: 'Jeux' },
+    { type: 'mi', icon: 'flight', label: 'Voyage' },
+    { type: 'mi', icon: 'pets', label: 'Animaux' },
+    { type: 'mi', icon: 'restaurant', label: 'Restaurant' },
+    { type: 'mi', icon: 'store', label: 'Magasin' },
+    { type: 'mi', icon: 'health_and_safety', label: 'Santé' },
+    { type: 'mi', icon: 'directions_car', label: 'Voiture' },
+    { type: 'mi', icon: 'home', label: 'Maison' }
+  ],
+  bs: [
+    { type: 'bs', icon: 'bi-currency-euro', label: 'Banque' },
+    { type: 'bs', icon: 'bi-basket2-fill', label: 'Courses (Bootstrap)' },
+    { type: 'bs', icon: 'bi-house', label: 'Maison (Bootstrap)' },
+    { type: 'bs', icon: 'bi-airplane', label: 'Avion' },
+    { type: 'bs', icon: 'bi-car-front', label: 'Voiture (Bootstrap)' },
+    { type: 'bs', icon: 'bi-cup-hot', label: 'Café' },
+    { type: 'bs', icon: 'bi-emoji-smile', label: 'Fun' },
+    { type: 'bs', icon: 'bi-heart-pulse', label: 'Santé (Bootstrap)' },
+    { type: 'bs', icon: 'bi-bag', label: 'Course' }
+  ]
+};
+
+// Ajoute la dépendance Bootstrap Icons (dans ton <head> si tu ne l’as pas déjà)
+if (!document.querySelector('link[href*="bootstrap-icons"]')) {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css';
+  document.head.appendChild(link);
+}
+
+>>>>>>> edd07ce (Improving lots)
 function renderCategoryPicker() {
   const picker = document.getElementById('category-dropdown');
-  picker.innerHTML = '';
-  picker.style.display = 'grid';
-  CATEGORY_ICONS.forEach(cat => {
-    const span = document.createElement('span');
-    span.className = 'cat-icon';
-    span.title = cat.label;
-    if (cat.type === 'fa') {
-      span.innerHTML = `<i class="fa-solid ${cat.icon}"></i>`;
-    } else if (cat.type === 'mi') {
-      span.innerHTML = `<span class="material-icons">${cat.icon}</span>`;
-    }
-    span.addEventListener('click', () => {
-      document.getElementById('category').value = JSON.stringify(cat);
-      document.getElementById('selected-category').innerHTML = span.innerHTML;
-      picker.style.display = 'none';
-      document.getElementById('selected-category').dataset.placeholder = "";
+  const tabs = picker.querySelectorAll('.icon-tab');
+  const lists = picker.querySelectorAll('.icon-picker-list');
+  
+  // Onglet : active le bon tab et sa liste
+  tabs.forEach(btn => {
+    btn.onclick = function() {
+      tabs.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      lists.forEach(list => {
+        list.style.display = (list.dataset.tab === btn.dataset.tab) ? '' : 'none';
+      });
+    };
+  });
+
+  // Génère les icônes pour chaque onglet (fa, mi, bs)
+  lists.forEach(list => {
+    const type = list.dataset.tab;
+    list.innerHTML = '';
+    (CATEGORY_ICONS[type] || []).forEach(cat => {
+      const span = document.createElement('span');
+      span.className = 'cat-icon';
+      span.title = cat.label;
+      if (cat.type === 'fa') span.innerHTML = `<i class="fa-solid ${cat.icon}"></i>`;
+      if (cat.type === 'mi') span.innerHTML = `<span class="material-icons">${cat.icon}</span>`;
+      if (cat.type === 'bs') span.innerHTML = `<i class="bi ${cat.icon}"></i>`;
+      span.onclick = () => {
+        document.getElementById('category').value = JSON.stringify(cat);
+        document.getElementById('selected-category').innerHTML = span.innerHTML;
+        picker.style.display = 'none';
+        document.getElementById('selected-category').dataset.placeholder = "";
+      };
+      list.appendChild(span);
     });
-    picker.appendChild(span);
+  });
+}
+  // Gestion des onglets
+  picker.querySelectorAll('.cat-tab-btn').forEach(btn => {
+    btn.onclick = function() {
+      picker.querySelectorAll('.cat-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      picker.querySelectorAll('.cat-tab-content').forEach(c => {
+        c.style.display = c.dataset.content === tab ? 'grid' : 'none';
+      });
+    };
   });
 }
 
@@ -187,7 +270,6 @@ function loadTransactionsLocal() {
   }
 }
 
-// Ajout transaction
 function addTransaction(event) {
   event.preventDefault();
   const type = document.getElementById('type').value;
@@ -197,50 +279,39 @@ function addTransaction(event) {
   const amountValue = parseFloat(document.getElementById('amount').value);
   const dateValue = document.getElementById('date').value;
   const recurrence = document.getElementById('recurrence').value;
-  const installments = parseInt(document.getElementById('installments').value);
+  const applyPrevious = document.getElementById('apply-previous').checked;
+
   if (!description || isNaN(amountValue) || !dateValue || !category) {
     alert('Veuillez remplir tous les champs obligatoires, y compris la catégorie.');
     return;
   }
-  const baseDate = new Date(dateValue);
   const id = Date.now();
-  if (recurrence === 'installments' && installments && installments > 1) {
-    const perAmount = parseFloat((amountValue / installments).toFixed(2));
-    for (let i = 0; i < installments; i++) {
-      const instDate = addMonths(baseDate, i);
-      const tx = {
-        id: id + '_' + i,
-        type,
-        category,
-        description: `${description} (${i + 1}/${installments})`,
-        amount: perAmount,
-        date: formatDate(instDate),
-        recurrence: 'none',
-      };
-      transactions.push(tx);
-    }
-  } else {
-    const tx = {
-      id: id,
-      type,
-      category,
-      description,
-      amount: amountValue,
-      date: dateValue,
-      recurrence,
-    };
-    transactions.push(tx);
-  }
+
+  // Ajout simple, sans duplication par mois
+  const tx = {
+    id: id,
+    type,
+    category,
+    description,
+    amount: amountValue,
+    date: dateValue,
+    recurrence,
+    applyPrevious,
+  };
+  transactions.push(tx);
+
   saveTransactionsLocal();
   if (isDropboxConnected()) saveTransactionsDropbox();
   updateViews();
   event.target.reset();
   document.getElementById('installments-row').style.display = 'none';
+  document.getElementById('apply-previous-row').style.display = 'none';
   document.getElementById('category').value = '';
   document.getElementById('selected-category').innerHTML = `<i class="fa-regular fa-circle-question"></i>`;
   document.getElementById('selected-category').dataset.placeholder = "1";
 }
 
+<<<<<<< HEAD
 // Transactions pour un jour (récurrences incluses)
 function transactionsForDay(dateString) {
   const selectedDate = new Date(dateString);
@@ -264,6 +335,8 @@ function transactionsForDay(dateString) {
   return list;
 }
 
+=======
+>>>>>>> edd07ce (Improving lots)
 // --- CALENDRIER
 function renderCalendar() {
   const calendar = document.getElementById('calendar');
@@ -386,11 +459,29 @@ function transactionsForDay(dateString) {
   for (const tx of transactions) {
     const txDate = new Date(tx.date);
     if (tx.recurrence === 'monthly') {
-      // La transaction doit apparaître UNIQUEMENT si date courante >= date de départ
+      if (tx.applyPrevious) {
+        if (txDate.getDate() === day) {
+          list.push({ ...tx, date: formatDate(selectedDate) });
+        }
+      } else {
+        if (
+          txDate.getDate() === day &&
+          (selectedDate.getFullYear() > txDate.getFullYear() ||
+            (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+        ) {
+          list.push({ ...tx, date: formatDate(selectedDate) });
+        }
+      }
+    } else if (tx.recurrence === 'yearly') {
+      // --- Ajout annuel ---
       if (
         txDate.getDate() === day &&
+<<<<<<< HEAD
         (selectedDate.getFullYear() > txDate.getFullYear() ||
         (selectedDate.getFullYear() === txDate.getFullYear() && selectedDate.getMonth() >= txDate.getMonth()))
+=======
+        txDate.getMonth() === selectedDate.getMonth()
+>>>>>>> edd07ce (Improving lots)
       ) {
         list.push({ ...tx, date: formatDate(selectedDate) });
       }
@@ -542,6 +633,7 @@ function updateViews() {
   renderCalendar();
   renderTransactionList();
   renderStats();
+  renderMonthSummary();
 }
 
 // --- INIT ---
@@ -565,16 +657,25 @@ document.addEventListener('DOMContentLoaded', () => {
   selectedCat.innerHTML = `<i class="fa-regular fa-circle-question"></i>`;
   selectedCat.dataset.placeholder = "1";
   selectedCat.addEventListener('click', () => {
-    picker.style.display = picker.style.display === 'grid' ? 'none' : 'grid';
+    picker.style.display = picker.style.display === 'flex' || picker.style.display === '' ? 'none' : 'flex';
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('.category-picker')) picker.style.display = 'none';
   });
+<<<<<<< HEAD
     document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
     document.getElementById('recurrence').addEventListener('change', e => {
       const val = e.target.value;
       const row = document.getElementById('installments-row');
       if (row) row.style.display = val === 'installments' ? 'flex' : 'none';
+=======
+
+    document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
+    document.getElementById('recurrence').addEventListener('change', e => {
+      const val = e.target.value;
+      document.getElementById('installments-row').style.display = val === 'installments' ? 'flex' : 'none';
+      document.getElementById('apply-previous-row').style.display = val === 'monthly' ? 'flex' : 'none';
+>>>>>>> edd07ce (Improving lots)
     });
       document.getElementById('transaction-form').addEventListener('submit', addTransaction);
       document.getElementById('prev-month').addEventListener('click', () => {
@@ -645,10 +746,17 @@ document.addEventListener('DOMContentLoaded', () => {
         '--color-primary': '#65b8f7',
       };
       const DEFAULT_COLORS_DARK = {
+<<<<<<< HEAD
         '--color-weekend': '#23373a',    // doux bleu-vert
         '--color-holiday': '#40361a',    // marron chaud doux
         '--color-today': '#6c464e',      // prune douce
         '--color-primary': '#27524b',    // ton vert demandé
+=======
+        '--color-weekend': '#23373a',
+        '--color-holiday': '#40361a',
+        '--color-today': '#6c464e',
+        '--color-primary': '#27524b',
+>>>>>>> edd07ce (Improving lots)
       };
       document.querySelectorAll('.legend-reset').forEach(resetBtn => {
         resetBtn.addEventListener('click', function(e) {
@@ -692,18 +800,29 @@ function rgbToHex(rgb) {
   return "#" + nums.map(x => Number(x).toString(16).padStart(2, "0")).join('');
 }
 function openEditTransactionModal(tx) {
-  // Affiche la modale et pré-remplit le formulaire
   document.getElementById('modal-edit-transaction').style.display = 'flex';
   document.getElementById('edit-id').value = tx.id;
   document.getElementById('edit-description').value = tx.description;
   document.getElementById('edit-amount').value = tx.amount;
   document.getElementById('edit-date').value = tx.date;
   document.getElementById('edit-type').value = tx.type;
+  document.getElementById('edit-recurrence').value = tx.recurrence || 'none';
+
+  // Met à jour la case à cocher selon la transaction
+  document.getElementById('edit-apply-previous').checked = !!tx.applyPrevious;
+
+  // --- Nouveau : simule le changement pour forcer l'affichage ---
+  const event = new Event('change', { bubbles: true });
+  document.getElementById('edit-recurrence').dispatchEvent(event);
 }
 
 document.getElementById('edit-cancel-btn').onclick = function() {
   document.getElementById('modal-edit-transaction').style.display = 'none';
 };
+
+document.getElementById('edit-recurrence').addEventListener('change', function() {
+  document.getElementById('edit-apply-previous-row').style.display = this.value === 'monthly' ? 'flex' : 'none';
+});
 
 document.getElementById('edit-transaction-form').onsubmit = function(e) {
   e.preventDefault();
@@ -712,19 +831,24 @@ document.getElementById('edit-transaction-form').onsubmit = function(e) {
   const amount = parseFloat(document.getElementById('edit-amount').value);
   const date = document.getElementById('edit-date').value;
   const type = document.getElementById('edit-type').value;
-  // Tu peux compléter ici avec catégorie/recurrence si tu veux
+  const recurrence = document.getElementById('edit-recurrence').value;
+  const applyPrevious = document.getElementById('edit-apply-previous').checked;
+
   const idx = transactions.findIndex(tx => tx.id == id);
   if (idx !== -1) {
     transactions[idx].description = description;
     transactions[idx].amount = amount;
     transactions[idx].date = date;
     transactions[idx].type = type;
+    transactions[idx].recurrence = recurrence;
+    transactions[idx].applyPrevious = applyPrevious; // <--- le plus important
     saveTransactionsLocal();
     if (isDropboxConnected()) saveTransactionsDropbox();
     updateViews();
     document.getElementById('modal-edit-transaction').style.display = 'none';
   }
 };
+
 document.getElementById('modal-edit-transaction').addEventListener('click', function(e){
   if(e.target === this) this.style.display = 'none';
 });
@@ -765,15 +889,8 @@ document.getElementById('add-transaction-form').onsubmit = function(e) {
 document.getElementById('modal-add-transaction').addEventListener('click', function(e){
   if(e.target === this) this.style.display = 'none';
 });
-function openEditTransactionModal(tx) {
-  document.getElementById('modal-edit-transaction').style.display = 'flex';
-  document.getElementById('edit-id').value = tx.id;
-  document.getElementById('edit-description').value = tx.description;
-  document.getElementById('edit-amount').value = tx.amount;
-  document.getElementById('edit-date').value = tx.date;
-  document.getElementById('edit-type').value = tx.type;
-}
 
+<<<<<<< HEAD
 document.getElementById('edit-cancel-btn').onclick = function() {
   document.getElementById('modal-edit-transaction').style.display = 'none';
 };
@@ -797,6 +914,8 @@ document.getElementById('edit-transaction-form').onsubmit = function(e) {
     document.getElementById('modal-edit-transaction').style.display = 'none';
   }
 };
+=======
+>>>>>>> edd07ce (Improving lots)
 // === FERMETURE MODALE AJOUT RAPIDE (DOUBLE-CLICK CALENDRIER) ===
 document.getElementById('modal-add-transaction').addEventListener('click', function(e){
   // Clique sur le fond (arrière-plan) : ferme la modale
@@ -806,3 +925,52 @@ document.getElementById('add-cancel-btn').onclick = function() {
   // Clique sur "Annuler" : ferme la modale
   document.getElementById('modal-add-transaction').style.display = 'none';
 };
+<<<<<<< HEAD
+=======
+
+function renderMonthSummary() {
+  const monthList = document.getElementById('month-tx-list');
+  if (!monthList) return;
+
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+
+  // Liste toutes les transactions pour ce mois, toutes récurrences incluses
+  let summary = [];
+  for (let d = 1; d <= lastDay.getDate(); d++) {
+    const dateString = formatDate(new Date(year, month, d));
+    const txDay = transactionsForDay(dateString);
+    // Pour chaque transaction du jour, ajoute la date du jour pour l’affichage
+    txDay.forEach(tx => summary.push({ ...tx, date: dateString }));
+  }
+
+  // Trie par date croissante, puis par type (revenu avant dépense)
+  summary.sort((a, b) => {
+    if (a.date === b.date) {
+      return (a.type === 'income' ? -1 : 1) - (b.type === 'income' ? -1 : 1);
+    }
+    return new Date(a.date) - new Date(b.date);
+  });
+
+  if (summary.length === 0) {
+    monthList.innerHTML = "<li>Aucune transaction ce mois.</li>";
+    return;
+  }
+
+  // Construit la liste
+  monthList.innerHTML = summary.map(tx => {
+    let icon = '';
+    if (tx.category && tx.category.type === 'fa')
+      icon = `<i class="fa-solid ${tx.category.icon}" style="margin-right:6px"></i>`;
+    else if (tx.category && tx.category.type === 'mi')
+      icon = `<span class="material-icons" style="font-size:1em;margin-right:6px">${tx.category.icon}</span>`;
+    return `<li>
+      <span style="color:#888;font-size:0.98em;margin-right:7px;">${tx.date}</span>
+      ${icon}
+      <strong>${tx.type === 'income' ? 'Revenu' : 'Dépense'} :</strong> ${tx.description} – <em>${tx.amount.toFixed(2)} €</em>
+    </li>`;
+  }).join('');
+}
+>>>>>>> edd07ce (Improving lots)

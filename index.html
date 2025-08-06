@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <!-- Material Icons -->
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- Bootstrap -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Dropbox JS SDK -->
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
   <!-- Lib Chart.js -->
@@ -52,9 +54,25 @@
               <div id="category-picker" class="category-picker">
                 <input type="hidden" id="category" name="category" required>
                 <span id="selected-category" class="category-icon-preview" title="Clique pour choisir" data-placeholder="1"></span>
-                <div id="category-dropdown" class="category-dropdown"></div>
+                <div id="category-dropdown" class="category-dropdown" style="display:none;">
+                  <div class="icon-picker-tabs">
+                    <button class="icon-tab active" data-tab="fa" title="Font Awesome">
+                      <i class="fa-solid fa-star"></i>
+                    </button>
+                    <button class="icon-tab" data-tab="mi" title="Material Icons">
+                      <span class="material-icons">star</span>
+                    </button>
+                    <button class="icon-tab" data-tab="bs" title="Bootstrap">
+                      <i class="bi bi-star"></i>
+                    </button>
+                  </div>
+                  <div class="icon-picker-list" data-tab="fa"></div>
+                  <div class="icon-picker-list" data-tab="mi" style="display:none"></div>
+                  <div class="icon-picker-list" data-tab="bs" style="display:none"></div>
+                </div>
               </div>
             </div>
+
             <div class="form-row">
               <label for="description">Description :</label>
               <input type="text" id="description" required />
@@ -72,6 +90,7 @@
               <select id="recurrence">
                 <option value="none">Aucune</option>
                 <option value="monthly">Mensuelle</option>
+                <option value="yearly">Annuelle</option>
                 <option value="installments">Paiement en X fois</option>
               </select>
             </div>
@@ -79,10 +98,17 @@
               <label for="installments">Nombre d'échéances :</label>
               <input type="number" id="installments" min="2" max="24" />
             </div>
+            <div class="form-row" id="apply-previous-row" style="display:none;">
+              <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+                <input type="checkbox" id="apply-previous" />
+                Appliquer aux mois antérieurs
+              </label>
+            </div>
             <div class="form-row">
               <button type="submit">Ajouter</button>
             </div>
           </form>
+
         </section>
         <section id="salary-section">
           <h2>Salaire et économies</h2>
@@ -112,7 +138,8 @@
               <table id="calendar"></table>
               <div id="day-details"></div>
             </div>
-            <!-- Légende juste à droite du calendrier -->
+            <!-- Légende calendrier -->
+           <div class="calendar-side-col">
             <aside class="legend-container" id="legend-container">
               <div class="legend-title">Légende calendrier</div>
               <ul class="legend-list">
@@ -138,7 +165,13 @@
                 </li>
               </ul>
             </aside>
-          </div>
+          <!-- Récapitulatif du mois -->
+          <section class="month-summary" id="month-summary">
+            <h3>Récapitulatif du mois</h3>
+            <ul id="month-tx-list"></ul>
+          </section>
+        </div>
+      </div>
         </section>
       </div>
       <!-- Onglet Statistiques -->
@@ -193,15 +226,28 @@
       <h3>Modifier la transaction</h3>
       <form id="edit-transaction-form">
         <input type="hidden" id="edit-id" />
-        <label>Description :<input type="text" id="edit-description" required /></label>
-        <label>Montant (€) :<input type="number" id="edit-amount" step="0.01" required /></label>
-        <label>Date :<input type="date" id="edit-date" required /></label>
+        <label>Description : <input type="text" id="edit-description" required /></label>
+        <label>Montant (€) : <input type="number" id="edit-amount" step="0.01" required /></label>
+        <label>Date : <input type="date" id="edit-date" required /></label>
         <label>Type :
           <select id="edit-type" required>
             <option value="expense">Dépense</option>
             <option value="income">Revenu</option>
           </select>
         </label>
+        <label>Récurrence :
+          <select id="edit-recurrence">
+            <option value="none">Aucune</option>
+            <option value="monthly">Mensuelle</option>
+            <option value="installments">Paiement en X fois</option>
+          </select>
+        </label>
+        <div class="form-row" id="edit-apply-previous-row" style="display:none;">
+          <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+            <input type="checkbox" id="edit-apply-previous" />
+            Appliquer aux mois antérieurs
+          </label>
+        </div>
         <div style="margin-top:1em;display:flex;gap:1em;">
           <button type="submit">Enregistrer</button>
           <button type="button" id="edit-cancel-btn">Annuler</button>
