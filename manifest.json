@@ -1,10 +1,10 @@
 {
-  "name": "Gestionnaire de finances",
-  "short_name": "Finances",
-  "description": "Appli perso pour gérer ton budget, synchronisée Dropbox, compatible mobile et mode sombre.",
+  "name": "Assistant personnel",
+  "short_name": "Assistant",
+  "description": "Application multi‑services pour t'accompagner au quotidien : finances, agenda, tâches, santé et plus encore.",
   "start_url": "./index.html",
   "display": "standalone",
-  "theme_color": "#2e7d32",
+  "theme_color": "#65b8f7",
   "background_color": "#f5f5f5",
   "icons": [
     {

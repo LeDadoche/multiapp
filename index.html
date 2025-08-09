@@ -3,35 +3,150 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Gestionnaire de finances</title>
+  <title>Assistant personnel</title>
+
+  <!-- 🔒 Bootstrap de thème AVANT toute CSS pour éviter le flash -->
+  <script>
+  (function () {
+    try {
+      var saved = localStorage.getItem('theme');
+      if (!saved) {
+        saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        localStorage.setItem('theme', saved);
+      }
+      if (saved === 'dark') {
+        // on met la classe sur <html> (et ce sera pris par le CSS)
+        document.documentElement.classList.add('dark-mode');
+      }
+    } catch (e) {}
+  })();
+  </script>
+
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <!-- Material Icons -->
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <!-- Bootstrap -->
+  <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <!-- Dropbox JS SDK -->
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
-  <!-- Lib Chart.js -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 </head>
+
 <body>
-  <header>
-    <h1>Gestionnaire de finances</h1>
-    <label class="dark-mode-toggle">
-      <input type="checkbox" id="dark-mode-switch" />
-      <span class="slider"></span>
-      <span class="label-text">Mode sombre</span>
-    </label>
-    <button id="dropbox-login" class="dropbox-btn">Se connecter à Dropbox</button>
-    <button id="dropbox-logout" class="dropbox-btn" style="display:none;">Se déconnecter</button>
-    <span id="dropbox-status" style="font-weight:bold;margin-left:10px;"></span>
-  </header>
+<header class="site-header">
+  <!-- En-tête principal de l'application multi‑services -->
+  <div class="topbar">
+    <h1>Assistant personnel</h1>
+
+    <!-- Menu Profil / Réglages -->
+    <div class="profile-menu">
+      <button class="profile-trigger" id="profile-trigger" aria-haspopup="true" aria-expanded="false" title="Profil & Réglages">
+        <i class="fa-solid fa-user-gear"></i>
+      </button>
+
+      <div class="profile-dropdown" id="profile-dropdown" role="menu" aria-label="Réglages">
+        <div class="menu-section">
+          <div class="menu-title">Apparence</div>
+          <div class="toggle-row" style="justify-content: space-between;">
+            <span>Thème</span>
+            <button
+              id="theme-toggle"
+              class="theme-toggle"
+              aria-label="Basculer le thème sombre"
+              aria-pressed="false"
+              title="Basculer le thème sombre"
+            >
+              <span class="tt-track" aria-hidden="true"></span>
+              <span class="tt-knob" aria-hidden="true">
+                <!-- Icônes SVG pour un rendu net -->
+                <svg class="tt-sun" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <g class="rays">
+                    <line x1="12" y1="1"  x2="12" y2="4"></line>
+                    <line x1="12" y1="20" x2="12" y2="23"></line>
+                    <line x1="1"  y1="12" x2="4"  y2="12"></line>
+                    <line x1="20" y1="12" x2="23" y2="12"></line>
+                    <line x1="4.2" y1="4.2"  x2="6.4" y2="6.4"></line>
+                    <line x1="17.6" y1="17.6" x2="19.8" y2="19.8"></line>
+                    <line x1="17.6" y1="6.4"  x2="19.8" y2="4.2"></line>
+                    <line x1="4.2" y1="19.8" x2="6.4" y2="17.6"></line>
+                  </g>
+                </svg>
+                <svg class="tt-moon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 13.5A9 9 0 1 1 10.5 3
+                          a7 7 0 0 0 10.5 10.5Z"></path>
+                </svg>
+              </span>
+            </button>
+          </div>
+
+        </div>
+
+        <div class="menu-section">
+          <div class="menu-title">Cloud & synchronisation</div>
+
+          <!-- Dropbox -->
+          <div class="service-row">
+            <div class="service-head">
+              <i class="fa-brands fa-dropbox"></i>
+              <span>Dropbox</span>
+              <span class="service-status" id="dropbox-status">…</span>
+            </div>
+            <div class="service-actions">
+              <button id="dropbox-login" class="dropbox-btn">Se connecter</button>
+              <button id="dropbox-logout" class="dropbox-btn" style="display:none;">Se déconnecter</button>
+            </div>
+          </div>
+
+          <!-- Google Drive -->
+          <div class="service-row">
+            <div class="service-head">
+              <i class="fa-brands fa-google-drive"></i>
+              <span>Google Drive</span>
+              <span class="service-status" id="google-status">…</span>
+            </div>
+            <div class="service-actions">
+              <button id="google-login">Se connecter</button>
+              <button id="google-logout" style="display:none;">Se déconnecter</button>
+            </div>
+          </div>
+
+          <!-- Microsoft OneDrive -->
+          <div class="service-row">
+            <div class="service-head">
+              <i class="fa-brands fa-microsoft"></i>
+              <span>Microsoft OneDrive</span>
+              <span class="service-status" id="ms-status">…</span>
+            </div>
+            <div class="service-actions">
+              <button id="ms-login">Se connecter</button>
+              <button id="ms-logout" style="display:none;">Se déconnecter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /.profile-menu -->
+  </div><!-- /.topbar -->
+
+  <!-- Navigation des modules de la multi‑application -->
+  <nav class="app-nav" aria-label="Navigation des modules">
+    <button class="app-btn active" data-app="finance"><i class="fa-solid fa-coins"></i> Finance</button>
+    <button class="app-btn" data-app="agenda"><i class="fa-solid fa-calendar"></i> Agenda</button>
+    <button class="app-btn" data-app="courses"><i class="fa-solid fa-cart-shopping"></i> Courses</button>
+    <button class="app-btn" data-app="gamelles"><i class="fa-solid fa-bone"></i> Gamelles</button>
+    <button class="app-btn" data-app="taches"><i class="fa-solid fa-list-check"></i> Tâches</button>
+    <button class="app-btn" data-app="sante"><i class="fa-solid fa-heart-pulse"></i> Santé</button>
+  </nav>
+</header>
+
   <main>
-    <div class="main-container">
+    <!-- Section Finances : le contenu existant est encapsulé dans une section dédiée -->
+    <div id="app-finance" class="app-section" style="display:block;">
+      <div class="main-container">
       <nav class="tabs">
         <button class="tab-btn active" data-tab="tab-transactions">Transactions</button>
         <button class="tab-btn" data-tab="tab-stats">Statistiques</button>
@@ -49,22 +164,44 @@
                 <option value="income">Revenu</option>
               </select>
             </div>
+
+            <div class="form-row">
+              <label for="date">Date :</label>
+              <input type="text" id="date" class="date-input" placeholder="jj-mm-aaaa" required />
+            </div>
+
+            <div class="form-row">
+              <label for="recurrence">Récurrence :</label>
+              <select id="recurrence">
+                <option value="none">Aucune</option>
+                <option value="monthly">Mensuelle</option>
+                <option value="yearly">Annuelle</option>
+                <option value="installments">Paiement en X fois</option>
+              </select>
+            </div>
+
+            <div class="form-row" id="installments-row" style="display:none;">
+              <label for="installments">Nombre d'échéances :</label>
+              <input type="number" id="installments" min="2" max="24" />
+            </div>
+
+            <div class="form-row" id="apply-previous-row" style="display:none;">
+              <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+                <input type="checkbox" id="apply-previous" />
+                Appliquer aux mois antérieurs (depuis janvier)
+              </label>
+            </div>
+
             <div class="form-row">
               <label for="category">Catégorie :</label>
               <div id="category-picker" class="category-picker">
                 <input type="hidden" id="category" name="category" required>
-                <span id="selected-category" class="category-icon-preview" title="Clique pour choisir" data-placeholder="1"></span>
+                <span id="selected-category" class="category-icon-preview" title="Cliquez pour choisir une catégorie" data-placeholder="1"></span>
                 <div id="category-dropdown" class="category-dropdown" style="display:none;">
                   <div class="icon-picker-tabs">
-                    <button class="icon-tab active" data-tab="fa" title="Font Awesome">
-                      <i class="fa-solid fa-star"></i>
-                    </button>
-                    <button class="icon-tab" data-tab="mi" title="Material Icons">
-                      <span class="material-icons">star</span>
-                    </button>
-                    <button class="icon-tab" data-tab="bs" title="Bootstrap">
-                      <i class="bi bi-star"></i>
-                    </button>
+                    <button class="icon-tab active" data-tab="fa" title="Font Awesome"><i class="fa-solid fa-star"></i></button>
+                    <button class="icon-tab" data-tab="mi" title="Material Icons"><span class="material-icons">star</span></button>
+                    <button class="icon-tab" data-tab="bs" title="Bootstrap"><i class="bi bi-star"></i></button>
                   </div>
                   <div class="icon-picker-list" data-tab="fa"></div>
                   <div class="icon-picker-list" data-tab="mi" style="display:none"></div>
@@ -77,33 +214,12 @@
               <label for="description">Description :</label>
               <input type="text" id="description" required />
             </div>
+
             <div class="form-row">
               <label for="amount">Montant (€) :</label>
               <input type="number" id="amount" step="0.01" required />
             </div>
-            <div class="form-row">
-              <label for="date">Date :</label>
-              <input type="date" id="date" required />
-            </div>
-            <div class="form-row">
-              <label for="recurrence">Récurrence :</label>
-              <select id="recurrence">
-                <option value="none">Aucune</option>
-                <option value="monthly">Mensuelle</option>
-                <option value="yearly">Annuelle</option>
-                <option value="installments">Paiement en X fois</option>
-              </select>
-            </div>
-            <div class="form-row" id="installments-row" style="display: none;">
-              <label for="installments">Nombre d'échéances :</label>
-              <input type="number" id="installments" min="2" max="24" />
-            </div>
-            <div class="form-row" id="apply-previous-row" style="display:none;">
-              <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
-                <input type="checkbox" id="apply-previous" />
-                Appliquer aux mois antérieurs
-              </label>
-            </div>
+
             <div class="form-row">
               <button type="submit">Ajouter</button>
             </div>
@@ -130,6 +246,8 @@
           <div class="calendar-layout">
             <div class="calendar-wrapper">
               <div class="calendar-nav sticky-nav">
+                <!-- Sélecteur annuel de mois -->
+                <div id="month-picker" class="month-picker" style="display:none;"></div>
                 <button id="prev-month" aria-label="Mois précédent"><i class="fa-solid fa-arrow-left"></i></button>
                 <span id="current-month"></span>
                 <button id="next-month" aria-label="Mois suivant"><i class="fa-solid fa-arrow-right"></i></button>
@@ -167,7 +285,16 @@
             </aside>
           <!-- Récapitulatif du mois -->
           <section class="month-summary" id="month-summary">
-            <h3>Récapitulatif du mois</h3>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6em;">
+              <h3 style="margin: 0;">Récapitulatif du mois</h3>
+              <button id="month-sort-btn" title="Changer le tri" style="background:none;border:none;cursor:pointer;font-size:1.3em;color:#27524b;">
+                <i id="month-sort-icon" class="fa-solid fa-calendar-day"></i>
+              </button>
+              <label style="font-size: 0.9em; color: #27524b; display: flex; align-items: center; gap: 0.4em;">
+                <input type="checkbox" id="group-by-category" />
+                Regrouper par catégorie
+              </label>
+            </div>
             <ul id="month-tx-list"></ul>
           </section>
         </div>
@@ -196,39 +323,105 @@
           <button id="export-json">Exporter en JSON</button>
         </section>
       </div>
+      </div><!-- fin main-container finances -->
+    </div><!-- fin app-finance -->
+    <!-- Sections placeholders pour les autres modules de la multi‑application -->
+    <div id="app-agenda" class="app-section" style="display:none;">
+      <section class="placeholder-section">
+        <h2>Agenda</h2>
+        <p>Ce module sera bientôt disponible.</p>
+      </section>
+    </div>
+    <div id="app-courses" class="app-section" style="display:none;">
+      <section class="placeholder-section">
+        <h2>Courses</h2>
+        <p>Ce module sera bientôt disponible.</p>
+      </section>
+    </div>
+    <div id="app-gamelles" class="app-section" style="display:none;">
+      <section class="placeholder-section">
+        <h2>Gamelles</h2>
+        <p>Ce module sera bientôt disponible.</p>
+      </section>
+    </div>
+    <div id="app-taches" class="app-section" style="display:none;">
+      <section class="placeholder-section">
+        <h2>Tâches perso / pro</h2>
+        <p>Ce module sera bientôt disponible.</p>
+      </section>
+    </div>
+    <div id="app-sante" class="app-section" style="display:none;">
+      <section class="placeholder-section">
+        <h2>Santé</h2>
+        <p>Ce module sera bientôt disponible.</p>
+      </section>
     </div>
   </main>
   <!-- Modale Ajout rapide (calendrier) -->
-  <div id="modal-add-transaction" class="modal-bg" style="display:none;">
-    <div class="modal-content">
-      <h3>Ajouter une transaction</h3>
-      <form id="add-transaction-form">
-        <label>Description :<input type="text" id="add-description" required /></label>
-        <label>Montant (€) :<input type="number" id="add-amount" step="0.01" required /></label>
-        <label>Date :<input type="date" id="add-date" required /></label>
-        <label>Type :
+<div id="modal-add-transaction" class="modal-bg" style="display:none;">
+  <div class="modal-content">
+    <h3 style="margin-top:0; color:#27524b;">Nouvelle transaction rapide</h3>
+      <form id="add-transaction-form" novalidate>
+        <div class="form-row">
+          <label for="add-description">Description :</label>
+          <input type="text" id="add-description" required />
+        </div>
+
+        <div class="form-row">
+          <label for="add-date">Date :</label>
+          <input type="text" id="add-date" class="date-input" placeholder="jj-mm-aaaa" required />
+        </div>
+
+        <div class="form-row">
+          <label for="add-amount">Montant (€) :</label>
+          <input type="number" id="add-amount" step="0.01" required />
+        </div>
+
+        <div class="form-row">
+          <label for="add-type">Type :</label>
           <select id="add-type" required>
             <option value="expense">Dépense</option>
             <option value="income">Revenu</option>
           </select>
-        </label>
-        <div style="margin-top:1em;display:flex;gap:1em;">
-          <button type="submit">Ajouter</button>
-          <button type="button" id="add-cancel-btn">Annuler</button>
+        </div>
+
+        <div class="form-row">
+          <label for="add-category">Catégorie :</label>
+          <div id="add-category-picker" class="category-picker">
+            <input type="hidden" id="add-category" name="category" required>
+            <span id="add-selected-category" class="category-icon-preview" title="Clique pour choisir" data-placeholder="1">
+              <i class="fa-regular fa-circle-question"></i>
+            </span>
+            <div id="add-category-dropdown" class="category-dropdown" style="display:none;">
+              <div class="icon-picker-tabs">
+                <button class="icon-tab active" data-tab="fa" title="Font Awesome"><i class="fa-solid fa-star"></i></button>
+                <button class="icon-tab" data-tab="mi" title="Material Icons"><span class="material-icons">star</span></button>
+                <button class="icon-tab" data-tab="bs" title="Bootstrap"><i class="bi bi-star"></i></button>
+              </div>
+              <div class="icon-picker-list" data-tab="fa"></div>
+              <div class="icon-picker-list" data-tab="mi" style="display:none;"></div>
+              <div class="icon-picker-list" data-tab="bs" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:1.5em; display:flex; justify-content:flex-end; gap:1em;">
+          <button type="submit" style="background:#27524b;color:#fff;padding:0.5em 1.2em;border:none;border-radius:4px;cursor:pointer;">Ajouter</button>
+          <button type="button" id="add-cancel-btn" style="background:#d32f2f;color:#fff;padding:0.5em 1.2em;border:none;border-radius:4px;cursor:pointer;">Annuler</button>
         </div>
       </form>
-    </div>
   </div>
+</div>
 
   <!-- Modale Edition Historique -->
   <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
     <div class="modal-content">
       <h3>Modifier la transaction</h3>
-      <form id="edit-transaction-form">
+      <form id="edit-transaction-form" novalidate>
         <input type="hidden" id="edit-id" />
         <label>Description : <input type="text" id="edit-description" required /></label>
         <label>Montant (€) : <input type="number" id="edit-amount" step="0.01" required /></label>
-        <label>Date : <input type="date" id="edit-date" required /></label>
+        <label>Date : <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required /></label>
         <label>Type :
           <select id="edit-type" required>
             <option value="expense">Dépense</option>
@@ -255,6 +448,31 @@
       </form>
     </div>
   </div>
+<!-- Overlay d'authentification -->
+<div id="auth-overlay" class="modal-bg" style="display:none;">
+  <div class="modal-content">
+    <h3 id="auth-title">Authentification</h3>
+    <form id="auth-form" novalidate>
+      <div class="form-row">
+        <label for="auth-password">Mot de passe :</label>
+        <input type="password" id="auth-password"
+               autocomplete="current-password" required />
+      </div>
+
+      <div class="form-row" id="auth-confirm-row" style="display:none;">
+        <label for="auth-password-confirm">Confirmer :</label>
+        <!-- ATTENTION : PAS de required ici -->
+        <input type="password" id="auth-password-confirm"
+               autocomplete="new-password" />
+      </div>
+
+      <div style="text-align:right;">
+        <button type="submit" id="auth-submit-btn">Valider</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="script.js"></script>
 </body>
 </html>
