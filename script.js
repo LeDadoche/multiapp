@@ -578,6 +578,80 @@ function openQuickAddForDate(dStr) {
   renderQuickAddPicker();
 }
 
+// ===== RÉCURRENCES VIRTUELLES =====
+function lastDayOfMonth(y, m0) { // m0 = 0..11
+  return new Date(y, m0 + 1, 0).getDate();
+}
+
+/**
+ * Retourne true si la transaction "tx" a une occurrence le jour ISO "iso"
+ * (tx est stockée une seule fois ; on calcule les occurrences à la volée)
+ */
+function occursOnDate(tx, iso) {
+  const d = parseDate(iso);
+  const a = parseDate(tx.date); // ancre
+  const until = tx.until ? parseDate(tx.until) : null;
+  const applyPrev = !!tx.applyPrev;
+
+  // borne haute “Jusqu’à”
+  if (until && d > until) return false;
+
+  // si pas de récurrence
+  if (!tx.recurrence || tx.recurrence === 'none') {
+    return iso === tx.date;
+  }
+
+  // si pas applyPrev, on ne commence pas avant l’ancre
+  if (!applyPrev && d < a) return false;
+
+  // helpers
+  const monthsBetween = (from, to) =>
+  (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth());
+
+  if (tx.recurrence === 'monthly') {
+    const wantedDay = Math.min(a.getDate(), lastDayOfMonth(d.getFullYear(), d.getMonth()));
+    return (d.getDate() === wantedDay);
+  }
+
+  if (tx.recurrence === 'yearly') {
+    const wantedDay = Math.min(a.getDate(), lastDayOfMonth(d.getFullYear(), d.getMonth()));
+    return (d.getMonth() === a.getMonth()) && (d.getDate() === wantedDay);
+  }
+
+  if (tx.recurrence === 'installments') {
+    const total = Number(tx.installments || 0);
+    if (!total || total < 2) return iso === tx.date;
+    const months = monthsBetween(a, d);
+    // installments commencent à l’ancre, pas d’infini vers le passé
+    if (months < 0 || months >= total) return false;
+    const wantedDay = Math.min(a.getDate(), lastDayOfMonth(d.getFullYear(), d.getMonth()));
+    return d.getDate() === wantedDay;
+  }
+
+  return false;
+}
+
+/**
+ * Renvoie toutes les occurrences "virtuelles" des transactions
+ * dans l’intervalle [startIso .. endIso] (incluses).
+ * Chaque occurrence renvoyée est une copie superficielle avec date
+ * positionnée sur l’occurrence et un flag __instance = true.
+ */
+function expandTransactionsBetween(startIso, endIso) {
+  const start = parseDate(startIso), end = parseDate(endIso);
+  const out = [];
+  // Itère jour par jour (suffisant pour l’UI ; on ne manipule pas de gros volumes)
+  for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+    const dayIso = formatDate(cursor);
+    for (const tx of transactions) {
+      if (occursOnDate(tx, dayIso)) {
+        out.push({ ...tx, date: dayIso, __instance: true });
+      }
+    }
+  }
+  return out;
+}
+
 // --- Calendrier : rendu + écouteurs (click + double‑click propre)
 function renderCalendar() {
   const table = document.getElementById('calendar');
@@ -630,7 +704,7 @@ function renderCalendar() {
         if (isToday) cls += ' calendar-today';
         if (selectedDate === dStr) cls += ' selected';
 
-        const dayTx = transactions.filter(t => t.date === dStr);
+        const dayTx = transactions.filter(t => occursOnDate(t, dStr));
 
         html += `<td class="${cls.trim()}" data-date="${dStr}">
         <div class="day-number">${day}</div>
@@ -657,7 +731,7 @@ function renderCalendar() {
     selectedDate = td.getAttribute('data-date');
 
     const d = parseDate(selectedDate);
-    const dayTx = transactions.filter(t => t.date === selectedDate);
+    const dayTx = transactions.filter(t => occursOnDate(t, selectedDate));
 
     details.innerHTML = `
     <strong>${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^\w/, c=>c.toUpperCase())}</strong>
@@ -820,26 +894,76 @@ function renderTransactionList() {
   const list = document.getElementById('transactions-list');
   if (!list) return;
   list.innerHTML = '';
+
+  // Affiche UNIQUEMENT les "bases" (pas d’expansion)
   const sorted = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
+
+  const badge = (tx) => {
+    if (!tx.recurrence || tx.recurrence === 'none') return '';
+    if (tx.recurrence === 'monthly') return '<span class="tx-badge" title="Mensuelle">Mensuelle</span>';
+    if (tx.recurrence === 'yearly')  return '<span class="tx-badge" title="Annuelle">Annuelle</span>';
+    if (tx.recurrence === 'installments') return `<span class="tx-badge" title="Échéances">Échéances${tx.installments?` ×${tx.installments}`:''}</span>`;
+    return '';
+  };
+
   for (const tx of sorted) {
     const li = document.createElement('li');
     li.innerHTML = `
-    <span>${renderCategoryIconInline(tx.category)} ${tx.description} — <strong>${tx.type === 'income' ? '+' : '-'}${Number(tx.amount).toFixed(2)}€</strong></span>
+    <span style="display:flex; align-items:center; gap:.4em;">
+    ${renderCategoryIconInline(tx.category)}
+    <span>${tx.description}</span>
+    ${badge(tx)}
+    </span>
     <span>${new Date(tx.date).toLocaleDateString('fr-FR')}</span>
-    <button class="remove-btn" title="Supprimer" aria-label="Supprimer">&#x2716;</button>
+    <span style="display:flex; gap:.4em;">
+    <button class="edit-btn"  title="Modifier"  aria-label="Modifier">✏️</button>
+    <button class="remove-btn" title="Supprimer" aria-label="Supprimer">🗑️</button>
+    </span>
     `;
+
+    li.querySelector('.edit-btn').addEventListener('click', () => openEditModal(tx));
     li.querySelector('.remove-btn').addEventListener('click', () => {
-      const idx = transactions.findIndex(t => t === tx);
-      if (idx !== -1) {
-        transactions.splice(idx, 1);
+      if (confirm(`Supprimer "${tx.description}" (série entière) ?`)) {
+        transactions = transactions.filter(t => t.id !== tx.id);
         saveTransactionsLocal();
         if (isDropboxConnected()) saveTransactionsDropbox();
         updateViews();
       }
     });
+
+    // Double‑clic = éditer
     li.addEventListener('dblclick', () => openEditModal(tx));
+
     list.appendChild(li);
   }
+}
+
+// Période des stats (synchro avec les <select> HTML)
+let STATS_PERIOD = 'month'; // 'day' | 'month' | 'year'
+
+function getStatsRange() {
+  const today = new Date();
+  if (STATS_PERIOD === 'day') {
+    const d = selectedDate ? parseDate(selectedDate) : today;
+    const iso = formatDate(d);
+    return { startIso: iso, endIso: iso, label: d.toLocaleDateString('fr-FR') };
+  }
+  if (STATS_PERIOD === 'year') {
+    const y = currentMonth.getFullYear();
+    return {
+      startIso: formatDate(new Date(y, 0, 1)),
+      endIso:   formatDate(new Date(y, 11, 31)),
+      label: `Année ${y}`
+    };
+  }
+  // default: month
+  const y = currentMonth.getFullYear(), m0 = currentMonth.getMonth();
+  const label = currentMonth.toLocaleDateString('fr-FR',{ month:'long', year:'numeric' });
+  return {
+    startIso: formatDate(new Date(y, m0, 1)),
+    endIso:   formatDate(new Date(y, m0 + 1, 0)),
+    label
+  };
 }
 
 // ====== STATS ======
@@ -849,7 +973,13 @@ function renderStats() {
   const info = document.getElementById('stats-info');
   if (!canvas || !info) return;
 
-  const expense = transactions.filter(t => t.type === 'expense');
+  const { startIso, endIso, label } = getStatsRange();
+
+  // Développe les occurrences uniquement dans la plage demandée
+  const inst = expandTransactionsBetween(startIso, endIso);
+
+  // On calcule sur les DÉPENSES uniquement (comme avant)
+  const expense = inst.filter(t => t.type === 'expense');
   const byCat = {};
   for (const tx of expense) {
     const key = tx.category || DEFAULT_CATEGORY;
@@ -858,10 +988,7 @@ function renderStats() {
   const labels = Object.keys(byCat);
   const values = labels.map(k => byCat[k]);
 
-  if (pieChart) {
-    pieChart.destroy();
-    pieChart = null;
-  }
+  if (pieChart) { pieChart.destroy(); pieChart = null; }
   pieChart = new Chart(canvas.getContext('2d'), {
     type: 'pie',
     data: { labels, datasets: [{ data: values }] },
@@ -869,8 +996,9 @@ function renderStats() {
   });
 
   const total = values.reduce((a,b)=>a+b,0);
-  info.textContent = `Total dépenses : ${total.toFixed(2)} €`;
+  info.textContent = `Total dépenses (${label}) : ${total.toFixed(2)} €`;
 }
+
 
 // ====== Récapitulatif du mois (liste + tri + regroupement) ======
 function renderMonthSummary() {
@@ -880,8 +1008,11 @@ function renderMonthSummary() {
   const sortIcon = document.getElementById('month-sort-icon');
   const groupCheckbox = document.getElementById('group-by-category');
 
-  const mKey = monthKey(currentMonth);
-  const filtered = transactions.filter(t => monthKey(parseDate(t.date)) === mKey);
+  const y = currentMonth.getFullYear();
+  const m0 = currentMonth.getMonth();
+  const startIso = formatDate(new Date(y, m0, 1));
+  const endIso   = formatDate(new Date(y, m0 + 1, 0));
+  const filtered = expandTransactionsBetween(startIso, endIso);
 
   const sorted = [...filtered].sort((a, b) => {
     if (monthSortMode === 'date-asc') return new Date(a.date) - new Date(b.date);
@@ -960,52 +1091,94 @@ function addTransaction(ev) {
   const description = document.getElementById('description').value.trim();
   const amount = Number(document.getElementById('amount').value);
   const dateISO = readDateInput('date');
+  const recurrence = document.getElementById('recurrence').value;
+  const untilISO = readDateInput('recurrence-end'); // ⬅️ nouveau
+  const installmentsEl = document.getElementById('installments');
+  const installments = installmentsEl ? Number(installmentsEl.value || 0) : 0;
+
+  // “appliquer aux mois antérieurs” (virtuel, pas de duplication)
+  const applyPrev = document.getElementById('apply-previous')?.checked || false;
+
   if (!description || !dateISO || Number.isNaN(amount)) {
     alert('Merci de remplir correctement le formulaire.');
     return;
   }
-  const recurrence = document.getElementById('recurrence').value;
-  const applyPrev = document.getElementById('apply-previous').checked;
 
-  const baseTx = { id: crypto.randomUUID(), type, category, description, amount, date: dateISO, recurrence: recurrence || 'none' };
-  // Ajout de la transaction de base
-  transactions.push(baseTx);
+  const tx = {
+    id: crypto.randomUUID(),
+    type, category, description, amount,
+    date: dateISO,
+    recurrence: recurrence || 'none',
+    applyPrev: applyPrev || false
+  };
 
-  // ===== Récurrence vers les mois précédents =====
-  if (applyPrev && recurrence === 'monthly') {
-    const start = parseDate(dateISO);
-    for (let i = 1; i <= 11; i++) { // 11 mois précédents
-      const prev = addMonths(start, -i);
-      const lastOfMonth = new Date(prev.getFullYear(), prev.getMonth() + 1, 0);
-      const day = Math.min(start.getDate(), lastOfMonth.getDate());
-      const iso = formatDate(new Date(prev.getFullYear(), prev.getMonth(), day));
-      transactions.push({ ...baseTx, id: crypto.randomUUID(), date: iso });
-    }
-  } else if (applyPrev && recurrence === 'yearly') {
-    const d = parseDate(dateISO);
-    const prevYear = new Date(d.getFullYear() - 1, d.getMonth(), d.getDate());
-    const lastOfMonth = new Date(prevYear.getFullYear(), prevYear.getMonth() + 1, 0);
-    const day = Math.min(d.getDate(), lastOfMonth.getDate());
-    const iso = formatDate(new Date(prevYear.getFullYear(), prevYear.getMonth(), day));
-    transactions.push({ ...baseTx, id: crypto.randomUUID(), date: iso });
+  if (untilISO) tx.until = untilISO;
+  if (tx.recurrence === 'installments' && installments >= 2) {
+    tx.installments = installments;
   }
 
+  transactions.push(tx);
   saveTransactionsLocal();
   if (isDropboxConnected()) saveTransactionsDropbox();
   updateViews();
+
   ev.target.reset();
   document.getElementById('apply-previous-row').style.display = 'none';
+  document.getElementById('recurrence-end-row').style.display = 'none';
+  document.getElementById('installments-row').style.display = 'none';
 }
 
 function openEditModal(tx) {
   const modal = document.getElementById('modal-edit-transaction');
   if (!modal) return;
+
+  // Champs de base
   document.getElementById('edit-id').value = tx.id;
   document.getElementById('edit-description').value = tx.description;
   document.getElementById('edit-amount').value = tx.amount;
   writeDateInput('edit-date', tx.date);
   document.getElementById('edit-type').value = tx.type;
-  document.getElementById('edit-recurrence').value = tx.recurrence || 'none';
+
+  // Récurrence
+  const r = tx.recurrence || 'none';
+  const recSel = document.getElementById('edit-recurrence');
+  recSel.value = r;
+
+  // “Jusqu’à”
+  if (tx.until) writeDateInput('edit-until', tx.until);
+  else writeDateInput('edit-until', '');
+
+  // Appliquer aux mois antérieurs
+  const applyPrevEl = document.getElementById('edit-apply-previous');
+  applyPrevEl.checked = !!tx.applyPrev;
+
+  // Échéances
+  const instRow = document.getElementById('edit-installments-row');
+  const instInput = document.getElementById('edit-installments');
+  if (r === 'installments') {
+    instRow.style.display = '';
+    instInput.value = tx.installments ? Number(tx.installments) : '';
+  } else {
+    instRow.style.display = 'none';
+    instInput.value = '';
+  }
+
+  // Lignes conditionnelles
+  const endRow = document.getElementById('edit-end-row');
+  const applyPrevRow = document.getElementById('edit-apply-previous-row');
+  const hasUntil = (r === 'monthly' || r === 'yearly');
+  endRow.style.display = hasUntil ? '' : 'none';
+  applyPrevRow.style.display = hasUntil ? '' : 'none';
+
+  // Sync change
+  recSel.onchange = () => {
+    const v = recSel.value;
+    const vHasUntil = (v === 'monthly' || v === 'yearly');
+    endRow.style.display = vHasUntil ? '' : 'none';
+    applyPrevRow.style.display = vHasUntil ? '' : 'none';
+    instRow.style.display = (v === 'installments') ? '' : 'none';
+  };
+
   modal.style.display = 'block';
 }
 
@@ -1015,22 +1188,57 @@ function closeEditModal() {
 }
 document.getElementById('edit-cancel-btn')?.addEventListener('click', closeEditModal);
 
+document.getElementById('edit-delete-btn')?.addEventListener('click', () => {
+  const id = document.getElementById('edit-id')?.value;
+  const tx = transactions.find(t => t.id === id);
+  if (!tx) return;
+  if (!confirm(`Supprimer "${tx.description}" ?`)) return;
+
+  transactions = transactions.filter(t => t.id !== id);
+  saveTransactionsLocal();
+  if (isDropboxConnected()) saveTransactionsDropbox();
+  updateViews();
+  closeEditModal();
+});
+
 document.getElementById('edit-transaction-form')?.addEventListener('submit', (ev) => {
   ev.preventDefault();
+
   const id = document.getElementById('edit-id').value;
   const description = document.getElementById('edit-description').value.trim();
   const amount = Number(document.getElementById('edit-amount').value);
-  const dateISO = readDateInput('edit-date'); // NEW
+  const dateISO = readDateInput('edit-date');
   const type = document.getElementById('edit-type').value;
   const recurrence = document.getElementById('edit-recurrence').value;
+  const untilISO = readDateInput('edit-until');
+  const applyPrev = document.getElementById('edit-apply-previous')?.checked || false;
+  const installments = Number(document.getElementById('edit-installments')?.value || 0);
+
   const tx = transactions.find(t => t.id === id);
   if (!tx) return;
 
+  // Validation simple
+  if (!description || !dateISO || Number.isNaN(amount)) {
+    alert('Merci de remplir correctement le formulaire.');
+    return;
+  }
+  if (recurrence === 'installments' && (!installments || installments < 2)) {
+    alert('Indique un nombre d’échéances (≥ 2).');
+    return;
+  }
+
+  // Mise à jour
   tx.description = description;
   tx.amount = amount;
   tx.date = dateISO;
   tx.type = type;
-  tx.recurrence = recurrence;
+  tx.recurrence = recurrence || 'none';
+  tx.applyPrev = applyPrev;
+
+  if (untilISO) tx.until = untilISO; else delete tx.until;
+
+  if (tx.recurrence === 'installments') tx.installments = installments;
+  else delete tx.installments;
 
   saveTransactionsLocal();
   if (isDropboxConnected()) saveTransactionsDropbox();
@@ -1041,28 +1249,36 @@ document.getElementById('edit-transaction-form')?.addEventListener('submit', (ev
 // ====== Modale Ajout rapide ======
 document.getElementById('add-transaction-form')?.addEventListener('submit', function(e){
   e.preventDefault();
+
   const description = document.getElementById('add-description').value.trim();
   const amount = Number(document.getElementById('add-amount').value);
   const dateISO = readDateInput('add-date');
   const type = document.getElementById('add-type').value;
   const category = document.getElementById('add-category').value || DEFAULT_CATEGORY;
 
+  const recurrence = document.getElementById('add-recurrence')?.value || 'none';
+  const untilDateISO = readDateInput('add-until');
+  const installments = Number(document.getElementById('add-installments')?.value || 0);
+  const applyPrev = !!document.getElementById('add-apply-previous')?.checked;
+
   if (!description || Number.isNaN(amount) || !dateISO) {
     alert('Merci de compléter la description, le montant et la date.');
     return;
   }
 
-  const tx = {
+  const baseTx = {
     id: crypto.randomUUID(),
-                                                                  type,
-                                                                  category,
-                                                                  description,
-                                                                  amount,
+                                                                  type, category, description, amount,
                                                                   date: dateISO,
-                                                                  recurrence: 'none',
+                                                                  recurrence: recurrence || 'none',
+                                                                  applyPrev: applyPrev || false
   };
+  if (untilDateISO) baseTx.until = untilDateISO;
+  if (baseTx.recurrence === 'installments' && installments >= 2) {
+    baseTx.installments = installments;
+  }
 
-  transactions.push(tx);
+  transactions.push(baseTx);
   saveTransactionsLocal();
   if (isDropboxConnected()) saveTransactionsDropbox();
   updateViews();
@@ -1184,9 +1400,34 @@ document.addEventListener('DOMContentLoaded', () => {
     updateMSStatus();
     __attachDatePickers();
 
-    // Pickers catégories
-    renderCategoryPicker();
-    renderQuickAddPicker();
+    // Pickers catégories — SAFE
+    initCategoryPickerSafe({
+      picker:   'category-picker',
+      input:    'category',
+      preview:  'selected-category',
+      dropdown: 'category-dropdown',
+      search:   'cp-search-input',
+      cats:     'cp-cats',
+      icons:    'cp-icons'
+    });
+    initCategoryPickerSafe({
+      picker:   'add-category-picker',
+      input:    'add-category',
+      preview:  'add-selected-category',
+      dropdown: 'add-category-dropdown',
+      search:   'add-cp-search-input',
+      cats:     'add-cp-cats',
+      icons:    'add-cp-icons'
+    });
+    initCategoryPickerSafe({
+      picker:   'edit-category-picker',
+      input:    'edit-category',
+      preview:  'edit-selected-category',
+      dropdown: 'edit-category-dropdown',
+      search:   'edit-cp-search-input',
+      cats:     'edit-cp-cats',
+      icons:    'edit-cp-icons'
+    });
 
     // Légende calendrier : applique les couleurs stockées puis branche les pickers
     applyStoredCalendarColors();
@@ -1211,7 +1452,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('ms-logout').addEventListener('click', logoutMS);
 
     // Onglets finances
-    // Onglets finances
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1222,12 +1462,56 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Affiche l’option "Appliquer aux mois antérieurs" uniquement si "Mensuelle"
+    // Formulaire principal
     const recSel = document.getElementById('recurrence');
     const applyPrevRow = document.getElementById('apply-previous-row');
-    if (recSel && applyPrevRow) {
-      const syncApplyPrev = () => { applyPrevRow.style.display = (recSel.value === 'monthly') ? '' : 'none'; };
-      recSel.addEventListener('change', syncApplyPrev);
-      syncApplyPrev(); // état initial
+    const endRow = document.getElementById('recurrence-end-row');
+    const instRow = document.getElementById('installments-row');
+
+    if (recSel) {
+      const syncMainRows = () => {
+        const v = recSel.value;
+        const hasUntil = (v === 'monthly' || v === 'yearly');
+        applyPrevRow.style.display = hasUntil ? '' : 'none';
+        endRow.style.display = hasUntil ? '' : 'none';
+        instRow.style.display = (v === 'installments') ? '' : 'none';
+      };
+      recSel.addEventListener('change', syncMainRows);
+      syncMainRows();
+    }
+
+    // Ajout rapide
+    const qaRecSel = document.getElementById('add-recurrence');
+    const qaApplyPrevRow = document.getElementById('add-apply-previous-row');
+    const qaInstRow = document.getElementById('add-installments-row');
+    const qaEndRow = document.getElementById('add-end-row');
+
+    if (qaRecSel) {
+      const syncQaRows = () => {
+        const v = qaRecSel.value;
+        const hasUntil = (v === 'monthly' || v === 'yearly');
+        if (qaApplyPrevRow) qaApplyPrevRow.style.display = hasUntil ? '' : 'none';
+        if (qaEndRow) qaEndRow.style.display = hasUntil ? '' : 'none';
+        if (qaInstRow) qaInstRow.style.display = (v === 'installments') ? '' : 'none';
+      };
+        qaRecSel.addEventListener('change', syncQaRows);
+        syncQaRows();
+    }
+
+    // Édition
+    const editRecSel = document.getElementById('edit-recurrence');
+    const editEndRow = document.getElementById('edit-end-row');
+    const editApplyPrevRow = document.getElementById('edit-apply-previous-row');
+
+    if (editRecSel) {
+      const syncEditRows = () => {
+        const v = editRecSel.value;
+        const hasUntil = (v === 'monthly' || v === 'yearly');
+        editEndRow.style.display = hasUntil ? '' : 'none';
+        editApplyPrevRow.style.display = hasUntil ? '' : 'none';
+      };
+      editRecSel.addEventListener('change', syncEditRows);
+      syncEditRows();
     }
 
     // Navigation multi‑modules
@@ -1256,6 +1540,28 @@ document.addEventListener('DOMContentLoaded', () => {
       currentMonth = new Date();
       updateViews();
     });
+
+    // --- Période des statistiques (sélecteurs synchronisés)
+    const statsSel = document.getElementById('stats-period');
+    const editStatsSel = document.getElementById('edit-stats-period');
+
+    function syncStatsPeriod(from) {
+      if (from === 'stats' && statsSel) {
+        STATS_PERIOD = statsSel.value;
+        if (editStatsSel) editStatsSel.value = STATS_PERIOD;
+      } else if (from === 'edit' && editStatsSel) {
+        STATS_PERIOD = editStatsSel.value;
+        if (statsSel) statsSel.value = STATS_PERIOD;
+      }
+      renderStats();
+    }
+
+    statsSel?.addEventListener('change', () => syncStatsPeriod('stats'));
+    editStatsSel?.addEventListener('change', () => syncStatsPeriod('edit'));
+
+    // Valeur initiale
+    if (statsSel) STATS_PERIOD = statsSel.value;
+    if (editStatsSel) editStatsSel.value = STATS_PERIOD;
 
     // NEW: suppression par Delete ou Backspace, même si la ligne n'a pas été cliquée
     document.addEventListener('keydown', (e) => {
@@ -1583,3 +1889,377 @@ function writeDateInput(id, iso) {
     document.querySelectorAll('input.date-input').forEach(attach);
   };
 })();
+
+// Remplir les icônes (exemple de set cohérent)
+function buildIconSet(container, lib) {
+  if (!container) return;
+  const icons = (lib === 'fa') ? [
+    'fa-solid fa-utensils','fa-solid fa-cart-shopping','fa-solid fa-bus',
+    'fa-solid fa-house','fa-solid fa-heart-pulse','fa-solid fa-dumbbell',
+    'fa-solid fa-gamepad','fa-solid fa-gift','fa-solid fa-paw',
+    'fa-solid fa-mobile-screen','fa-solid fa-bolt','fa-solid fa-sack-dollar',
+    'fa-solid fa-plane','fa-solid fa-car','fa-solid fa-tv',
+    'fa-solid fa-circle-question'
+  ] : (lib === 'mi') ? [
+    'restaurant','shopping_cart','directions_bus','home','favorite','fitness_center',
+    'sports_esports','card_giftcard','pets','smartphone','bolt','savings',
+    'flight','directions_car','tv','help'
+  ] : [
+    'bi bi-egg-fried','bi bi-basket3','bi bi-bus-front','bi bi-house-door',
+    'bi bi-heart-pulse','bi bi-barbell','bi bi-controller','bi bi-gift',
+    'bi bi-universal-access','bi bi-phone','bi bi-lightning','bi bi-piggy-bank',
+    'bi bi-airplane','bi bi-car-front','bi bi-tv','bi bi-question-circle'
+  ];
+
+  container.innerHTML = icons.map(icon => `
+  <button type="button" class="cat-icon"
+  data-lib="${lib}"
+  data-icon="${lib==='mi' ? icon : icon}">
+  ${
+    lib === 'fa' ? `<i class="${icon}"></i>` :
+    lib === 'mi' ? `<span class="material-icons">${icon}</span>` :
+    `<i class="${icon}"></i>`
+  }
+  </button>
+  `).join('');
+}
+
+/* ================== Category Picker v2 (SAFE) ================== */
+
+/* Jeu d’icônes par catégories (Font Awesome) */
+const CP_DATA = {
+  "Essentiels": ["fa-house","fa-utensils","fa-cart-shopping","fa-receipt","fa-plug","fa-droplet","fa-fire-burner","fa-wifi"],
+  "Logement": ["fa-house-chimney","fa-key","fa-screwdriver-wrench","fa-soap","fa-couch","fa-box"],
+  "Transport": ["fa-car","fa-bus","fa-train-subway","fa-gas-pump","fa-bicycle","fa-plane","fa-motorcycle"],
+  "Vie quotidienne": ["fa-basket-shopping","fa-bread-slice","fa-apple-whole","fa-shirt","fa-soap","fa-scissors","fa-gift"],
+  "Loisirs": ["fa-gamepad","fa-film","fa-music","fa-futbol","fa-dumbbell","fa-person-hiking","fa-camera"],
+  "Santé": ["fa-heart-pulse","fa-kit-medical","fa-pills","fa-tooth","fa-notes-medical"],
+  "Animaux": ["fa-paw","fa-bone","fa-fish","fa-shield-dog"],
+  "Télécom": ["fa-mobile-screen-button","fa-phone","fa-sim-card","fa-tower-cell"],
+  "Travail/Études": ["fa-briefcase","fa-laptop","fa-graduation-cap","fa-book","fa-chalkboard-user"],
+  "Autres": ["fa-circle-question","fa-sack-dollar","fa-sparkles"]
+};
+
+/**
+ * Initialise un picker.
+ * Accepte EITHER des IDs (cfg.picker/cfg.input/...) OU une structure en classes à l’intérieur du conteneur.
+ */
+function initCategoryPickerSafe(cfg) {
+  // 1) on cherche le conteneur
+  let root = null;
+  if (cfg.picker && document.getElementById(cfg.picker)) root = document.getElementById(cfg.picker);
+  if (!root) {
+    // fallback: s’il existe AU MOINS un .category-picker, on les initialisera en mode "auto"
+    return;
+  }
+
+  // 2) on résout les éléments, en essayant d’abord par ID, sinon par classes internes
+  const byId = (id) => id ? document.getElementById(id) : null;
+  const orInside = (el, sel) => el ? (el.querySelector(sel) || null) : null;
+
+  const elInput    = byId(cfg.input)    || orInside(root, 'input[type="hidden"][name="category"]');
+  const elPreview  = byId(cfg.preview)  || orInside(root, '.selected-category, #selected-category');
+  const elDropdown = byId(cfg.dropdown) || orInside(root, '.category-dropdown');
+  const elSearch   = byId(cfg.search)   || orInside(root, '.cp-search-input');
+  const elCats     = byId(cfg.cats)     || orInside(root, '.cp-cats');
+  const elIcons    = byId(cfg.icons)    || orInside(root, '.cp-icons, .icon-picker-list');
+
+  // si un indispensable manque, on sort proprement
+  if (!elInput || !elPreview || !elDropdown || !elIcons) {
+    console.warn('CategoryPicker: éléments manquants pour', cfg);
+    return;
+  }
+
+  // Construit les chips de catégories (une seule fois)
+  if (elCats && !elCats.dataset.built) {
+    const catNames = Object.keys(CP_DATA);
+    catNames.forEach((name, idx) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'cp-chip' + (idx === 0 ? ' active' : '');
+      chip.textContent = name;
+      chip.dataset.cat = name;
+      chip.addEventListener('click', () => {
+        elCats.querySelectorAll('.cp-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        if (elSearch) elSearch.value = '';
+        renderIcons(name, '');
+      });
+      elCats.appendChild(chip);
+    });
+    elCats.dataset.built = '1';
+  }
+
+  function renderIcons(cat, filter) {
+    const icons = CP_DATA[cat] || [];
+    const q = (filter || '').trim().toLowerCase();
+    elIcons.innerHTML = '';
+    icons
+    .filter(cls => !q || cls.replace('fa-','').includes(q))
+    .forEach(cls => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cat-icon';
+      b.innerHTML = `<i class="fa-solid ${cls}"></i>`;
+      b.title = cls.replace('fa-','');
+      b.addEventListener('click', () => {
+        elInput.value = cls;
+        elPreview.innerHTML = `<i class="fa-solid ${cls}"></i>`;
+        closeDropdown();
+      });
+      elIcons.appendChild(b);
+    });
+    if (!elIcons.children.length) {
+      const p = document.createElement('div');
+      p.style.cssText = 'grid-column:1 / -1; opacity:.7; padding:.4em 0;';
+      p.textContent = 'Aucun résultat';
+      elIcons.appendChild(p);
+    }
+  }
+
+  // Catégorie initiale
+  const firstCat = Object.keys(CP_DATA)[0];
+  renderIcons(firstCat, '');
+
+  // Recherche
+  if (elSearch && !elSearch.dataset.bound) {
+    elSearch.addEventListener('input', () => {
+      const active = elCats?.querySelector('.cp-chip.active')?.dataset.cat || firstCat;
+      renderIcons(active, elSearch.value);
+    });
+    elSearch.dataset.bound = '1';
+  }
+
+  // Ouverture / fermeture
+  function openDropdown() {
+    elDropdown.style.display = 'block';
+    // flip si manque d’espace
+    const rect = elDropdown.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.top;
+    if (spaceBelow < 260) { elDropdown.classList.add('open-top'); }
+    else { elDropdown.classList.remove('open-top'); }
+    requestAnimationFrame(() => elDropdown.classList.add('open'));
+    document.addEventListener('mousedown', onDocClick, true);
+    window.addEventListener('resize', onResize);
+  }
+  function closeDropdown() {
+    elDropdown.classList.remove('open');
+    setTimeout(() => { elDropdown.style.display = 'none'; }, 150);
+    document.removeEventListener('mousedown', onDocClick, true);
+    window.removeEventListener('resize', onResize);
+  }
+  function onDocClick(e) { if (!root.contains(e.target)) closeDropdown(); }
+  function onResize() {
+    const rect = elDropdown.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.top;
+    if (spaceBelow < 260) elDropdown.classList.add('open-top');
+    else elDropdown.classList.remove('open-top');
+  }
+
+  if (!elPreview.dataset.bound) {
+    elPreview.addEventListener('click', () => {
+      const isOpen = elDropdown.classList.contains('open');
+      if (isOpen) closeDropdown(); else openDropdown();
+    });
+      elPreview.dataset.bound = '1';
+  }
+}
+
+/* ==== Bootstrap : on initialise SANS planter, seulement si le root existe ==== */
+document.addEventListener('DOMContentLoaded', () => {
+  // Principale
+  if (document.getElementById('category-picker')) {
+    initCategoryPickerSafe({
+      picker: 'category-picker',
+      input: 'category',
+      preview: 'selected-category',
+      dropdown: 'category-dropdown',
+      search: 'cp-search-input',
+      cats: 'cp-cats',
+      icons: 'cp-icons'
+    });
+  }
+  // Ajout rapide
+  if (document.getElementById('add-category-picker')) {
+    initCategoryPickerSafe({
+      picker: 'add-category-picker',
+      input: 'add-category',
+      preview: 'add-selected-category',
+      dropdown: 'add-category-dropdown',
+      search: 'add-cp-search-input',
+      cats: 'add-cp-cats',
+      icons: 'add-cp-icons'
+    });
+  }
+  // Édition
+  if (document.getElementById('edit-category-picker')) {
+    initCategoryPickerSafe({
+      picker: 'edit-category-picker',
+      input: 'edit-category',
+      preview: 'edit-selected-category',
+      dropdown: 'edit-category-dropdown',
+      search: 'edit-cp-search-input',
+      cats: 'edit-cp-cats',
+      icons: 'edit-cp-icons'
+    });
+  }
+});
+
+  // Si tu as mis les blocs dans l’Ajout rapide et l’Édition, décommente/ajuste :
+  /*
+   *  initCategoryPicker({
+   *    picker:   'add-category-picker',
+   *    input:    'add-category',
+   *    preview:  'add-selected-category',
+   *    dropdown: 'add-category-dropdown',
+   *    search:   'add-cp-search-input',
+   *    cats:     'add-cp-cats',
+   *    icons:    'add-cp-icons'
+});
+
+initCategoryPicker({
+picker:   'edit-category-picker',
+input:    'edit-category',
+preview:  'edit-selected-category',
+dropdown: 'edit-category-dropdown',
+search:   'edit-cp-search-input',
+cats:     'edit-cp-cats',
+icons:    'edit-cp-icons'
+});
+*/
+
+  /* ============ Icon Picker V2 — Bottom sheet (autonome) ============ */
+  document.addEventListener('DOMContentLoaded', () => {
+    const SHEET  = document.getElementById('icon-sheet');
+    if (!SHEET) return; // rien à faire si le markup n’est pas là
+    const PANEL  = SHEET.querySelector('.sheet__panel');
+    const GRID   = document.getElementById('ip-grid');
+    const CHIPS  = document.getElementById('ip-chips');
+    const SEARCH = document.getElementById('ip-search');
+    const BTN_CLOSE    = SHEET.querySelector('.sheet__close');
+    const BTN_CANCEL   = document.getElementById('ip-cancel');
+    const BTN_VALIDATE = document.getElementById('ip-validate');
+
+    // Petit catalogue pour la démo (ajoute/retire librement)
+    const ICONS = {
+      "Récents": [],
+      "Essentiels": [
+        "fa-solid fa-utensils","fa-solid fa-cart-shopping","fa-solid fa-gas-pump",
+        "fa-solid fa-bus","fa-solid fa-sack-dollar","fa-solid fa-gift"
+      ],
+      "Logement": ["fa-solid fa-house","fa-solid fa-bolt","fa-solid fa-fire","fa-solid fa-droplet"],
+      "Transport": ["fa-solid fa-car","fa-solid fa-motorcycle","fa-solid fa-train-subway","fa-solid fa-plane"],
+      "Vie quotidienne": ["fa-solid fa-bread-slice","fa-solid fa-shirt","fa-solid fa-basket-shopping"],
+      "Santé": ["fa-solid fa-briefcase-medical","fa-solid fa-capsules","fa-solid fa-tooth"],
+      "Télécom": ["fa-solid fa-wifi","fa-solid fa-mobile-screen","fa-solid fa-phone"],
+      "Loisirs": ["fa-solid fa-futbol","fa-solid fa-music","fa-solid fa-gamepad","fa-solid fa-film"],
+      "Animaux": ["fa-solid fa-paw","fa-solid fa-bone"],
+      "Travail/Études": ["fa-solid fa-briefcase","fa-solid fa-graduation-cap"],
+      "Autres": ["fa-regular fa-circle-question","fa-solid fa-ellipsis"]
+    };
+
+    const RECENTS_KEY = 'ip.recents';
+    const loadRecents = () => JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
+    const saveRecents = (arr) => localStorage.setItem(RECENTS_KEY, JSON.stringify(arr.slice(0,12)));
+
+    let state = { icon:null, targetInput:null, targetPreview:null, category:'Essentiels' };
+
+    function openSheet(inputId, previewId){
+      state.targetInput  = document.getElementById(inputId);
+      state.targetPreview= document.getElementById(previewId);
+      state.icon = state.targetInput?.value || null;
+
+      ICONS["Récents"] = loadRecents();
+
+      renderChips();
+      renderGrid();
+      if (BTN_VALIDATE) BTN_VALIDATE.disabled = !state.icon;
+
+      SHEET.classList.add('is-open');
+      SHEET.setAttribute('aria-hidden','false');
+      setTimeout(() => PANEL?.focus(), 0);
+    }
+
+    function closeSheet(){
+      SHEET.classList.remove('is-open');
+      SHEET.setAttribute('aria-hidden','true');
+      if (SEARCH) SEARCH.value = '';
+    }
+
+    function renderChips(){
+      if (!CHIPS) return;
+      CHIPS.innerHTML = '';
+      Object.keys(ICONS).forEach(cat => {
+        if (cat === 'Récents' && ICONS['Récents'].length === 0) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'cp-chip' + (cat === state.category ? ' active' : '');
+        b.textContent = cat;
+        b.addEventListener('click', () => { state.category = cat; renderGrid();
+          CHIPS.querySelectorAll('.cp-chip').forEach(x=>x.classList.remove('active')); b.classList.add('active'); });
+        CHIPS.appendChild(b);
+      });
+    }
+
+    function renderGrid(){
+      if (!GRID) return;
+      const q = (SEARCH?.value || '').trim().toLowerCase();
+      const base = state.category ? ICONS[state.category] : Object.values(ICONS).flat();
+      const list = q ? base.filter(c => c.toLowerCase().includes(q)) : base;
+
+      GRID.innerHTML = '';
+      list.forEach(cls => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ip-icon' + (cls === state.icon ? ' is-selected' : '');
+        btn.innerHTML = `<i class="${cls}"></i>`;
+        btn.addEventListener('click', () => {
+          state.icon = cls;
+          GRID.querySelectorAll('.ip-icon').forEach(x=>x.classList.remove('is-selected'));
+          btn.classList.add('is-selected');
+          if (BTN_VALIDATE) BTN_VALIDATE.disabled = false;
+        });
+          GRID.appendChild(btn);
+      });
+      if (list.length === 0){
+        GRID.innerHTML = `<div style="grid-column:1/-1;opacity:.7;text-align:center;">Aucun résultat…</div>`;
+      }
+    }
+
+    function applySelection(){
+      if (!state.icon || !state.targetInput || !state.targetPreview) return;
+      state.targetInput.value = state.icon;
+      state.targetPreview.innerHTML = `<i class="${state.icon}"></i>`;
+
+      const r = loadRecents();
+      const i = r.indexOf(state.icon);
+      if (i !== -1) r.splice(i,1);
+      r.unshift(state.icon);
+      saveRecents(r);
+
+      closeSheet();
+    }
+
+    // Écoutes
+    document.addEventListener('click', (e) => {
+      const trig = e.target.closest('.cat-trigger');
+      if (trig){
+        openSheet(trig.dataset.targetInput, trig.dataset.targetPreview);
+      }
+    });
+    SHEET.addEventListener('click', (e) => {
+      if ((e.target).classList?.contains('sheet__backdrop')) closeSheet();
+    });
+      document.addEventListener('keydown', (e)=>{ if (SHEET.classList.contains('is-open') && e.key==='Escape') closeSheet(); });
+      SEARCH?.addEventListener('input', renderGrid);
+      BTN_CLOSE?.addEventListener('click', closeSheet);
+      BTN_CANCEL?.addEventListener('click', closeSheet);
+      BTN_VALIDATE?.addEventListener('click', applySelection);
+
+      // Afficher une icône déjà enregistrée au chargement
+      document.querySelectorAll('.cat-trigger').forEach(btn => {
+        const input = document.getElementById(btn.dataset.targetInput);
+        const preview = document.getElementById(btn.dataset.targetPreview);
+        if (input?.value) preview.innerHTML = `<i class="${input.value}"></i>`;
+      });
+  });

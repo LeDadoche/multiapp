@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Assistant personnel</title>
 
   <!-- 🔒 Bootstrap de thème AVANT toute CSS pour éviter le flash -->
@@ -179,6 +182,10 @@
                 <option value="installments">Paiement en X fois</option>
               </select>
             </div>
+            <div class="form-row" id="recurrence-end-row" style="display:none;">
+              <label for="recurrence-end">Jusqu’à :</label>
+              <input type="text" id="recurrence-end" class="date-input" placeholder="jj-mm-aaaa" />
+            </div>
 
             <div class="form-row" id="installments-row" style="display:none;">
               <label for="installments">Nombre d'échéances :</label>
@@ -192,23 +199,27 @@
               </label>
             </div>
 
-            <div class="form-row">
-              <label for="category">Catégorie :</label>
-              <div id="category-picker" class="category-picker">
-                <input type="hidden" id="category" name="category" required>
-                <span id="selected-category" class="category-icon-preview" title="Cliquez pour choisir une catégorie" data-placeholder="1"></span>
-                <div id="category-dropdown" class="category-dropdown" style="display:none;">
-                  <div class="icon-picker-tabs">
-                    <button class="icon-tab active" data-tab="fa" title="Font Awesome"><i class="fa-solid fa-star"></i></button>
-                    <button class="icon-tab" data-tab="mi" title="Material Icons"><span class="material-icons">star</span></button>
-                    <button class="icon-tab" data-tab="bs" title="Bootstrap"><i class="bi bi-star"></i></button>
-                  </div>
-                  <div class="icon-picker-list" data-tab="fa"></div>
-                  <div class="icon-picker-list" data-tab="mi" style="display:none"></div>
-                  <div class="icon-picker-list" data-tab="bs" style="display:none"></div>
-                </div>
-              </div>
+          <div class="form-row">
+            <label for="category">Catégorie :</label>
+
+            <!-- Picker V2 : bouton + pastille -->
+            <div class="category-picker-v2">
+              <input type="hidden" id="category" name="category" required>
+              <button
+                type="button"
+                class="cat-trigger"
+                data-target-input="category"
+                data-target-preview="selected-category"
+                aria-haspopup="dialog"
+                aria-controls="icon-sheet"
+                title="Choisir une catégorie">
+                <span id="selected-category" class="cat-badge">
+                  <i class="fa-regular fa-circle-question"></i>
+                </span>
+                <span class="cat-current-label">Choisir</span>
+              </button>
             </div>
+          </div>
 
             <div class="form-row">
               <label for="description">Description :</label>
@@ -305,6 +316,15 @@
       <div id="tab-stats" class="tab-content" style="display:none;">
         <section id="stats-section">
           <h2>Statistiques</h2>
+          <!-- ▼ Contrôle de période pour les statistiques -->
+          <div style="display:flex; align-items:center; gap:.6em; margin-bottom:.6em;">
+            <label for="stats-period" style="font-weight:600;">Période :</label>
+            <select id="stats-period">
+              <option value="day">Aujourd’hui</option>
+              <option value="month" selected>Mois en cours</option>
+              <option value="year">Année en cours</option>
+            </select>
+          </div>
           <div id="chart-container">
             <canvas id="pie-chart" width="300" height="300"></canvas>
           </div>
@@ -385,23 +405,56 @@
           </select>
         </div>
 
+        <!-- 📌 AJOUT — Options de récurrence (ajout rapide) -->
+        <div class="form-row">
+          <label for="add-recurrence">Récurrence :</label>
+          <select id="add-recurrence">
+            <option value="none">Aucune</option>
+            <option value="monthly">Mensuelle</option>
+            <option value="yearly">Annuelle</option>
+            <option value="installments">Paiement en X fois</option>
+          </select>
+        </div>
+
+        <div class="form-row" id="add-end-row">
+          <label for="add-until">Jusqu’à :</label>
+          <input type="text" id="add-until" class="date-input" placeholder="jj-mm-aaaa" />
+        </div>
+
+        <div class="form-row" id="add-installments-row" style="display:none;">
+          <label for="add-installments">Nombre d'échéances :</label>
+          <input type="number" id="add-installments" min="2" max="24" />
+        </div>
+
+        <div class="form-row" id="add-apply-previous-row" style="display:none;">
+          <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+            <input type="checkbox" id="add-apply-previous" />
+            Appliquer aux mois antérieurs (depuis janvier)
+          </label>
+        </div>
+
         <div class="form-row">
           <label for="add-category">Catégorie :</label>
-          <div id="add-category-picker" class="category-picker">
-            <input type="hidden" id="add-category" name="category" required>
-            <span id="add-selected-category" class="category-icon-preview" title="Clique pour choisir" data-placeholder="1">
-              <i class="fa-regular fa-circle-question"></i>
-            </span>
-            <div id="add-category-dropdown" class="category-dropdown" style="display:none;">
-              <div class="icon-picker-tabs">
-                <button class="icon-tab active" data-tab="fa" title="Font Awesome"><i class="fa-solid fa-star"></i></button>
-                <button class="icon-tab" data-tab="mi" title="Material Icons"><span class="material-icons">star</span></button>
-                <button class="icon-tab" data-tab="bs" title="Bootstrap"><i class="bi bi-star"></i></button>
+            <!-- === PICKER Catégorie (formulaire principal) === -->
+        <div id="add-category-picker" class="category-picker" style="position:relative;">
+          <input type="hidden" id="add-category" name="category" required>
+          <span id="add-selected-category" class="category-icon-preview"
+                title="Choisir une icône"
+                style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;border:2px solid #65b8f7;background:#fff;cursor:pointer;font-size:1.6em;">
+            <i class="fa-regular fa-circle-question"></i>
+          </span>
+
+          <div id="add-category-dropdown" class="category-dropdown" style="display:none;">
+            <div class="cp-toolbar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;">
+              <div class="cp-search" style="flex:1;display:flex;gap:.4rem;align-items:center;">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input id="add-cp-search-input" class="cp-search-input" type="text" placeholder="Rechercher…" style="width:100%;">
               </div>
-              <div class="icon-picker-list" data-tab="fa"></div>
-              <div class="icon-picker-list" data-tab="mi" style="display:none;"></div>
-              <div class="icon-picker-list" data-tab="bs" style="display:none;"></div>
+              <div class="cp-cats" id="add-cp-cats" style="display:flex;flex-wrap:wrap;gap:.4rem;"></div>
             </div>
+
+            <div class="icon-picker-list cp-icons" id="add-cp-icons"
+                style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.4rem;"></div>
           </div>
         </div>
 
@@ -413,41 +466,108 @@
   </div>
 </div>
 
-  <!-- Modale Edition Historique -->
+  <!-- Modale Edition Historique (propre) -->
   <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
-    <div class="modal-content">
-      <h3>Modifier la transaction</h3>
+    <div class="modal-content" style="max-width:680px;">
+      <h3 style="margin-top:0;">Modifier la transaction</h3>
+
       <form id="edit-transaction-form" novalidate>
         <input type="hidden" id="edit-id" />
-        <label>Description : <input type="text" id="edit-description" required /></label>
-        <label>Montant (€) : <input type="number" id="edit-amount" step="0.01" required /></label>
-        <label>Date : <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required /></label>
-        <label>Type :
+
+        <div class="form-row">
+          <label for="edit-description">Description :</label>
+          <input type="text" id="edit-description" required />
+        </div>
+
+        <div class="form-row">
+          <label for="edit-amount">Montant (€) :</label>
+          <input type="number" id="edit-amount" step="0.01" required />
+        </div>
+
+        <div class="form-row">
+          <label for="edit-date">Date :</label>
+          <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required />
+        </div>
+
+        <div class="form-row">
+          <label for="edit-type">Type :</label>
+          <div class="form-row">
+          <div id="edit-category-picker" class="category-picker" style="position:relative;">
+            <input type="hidden" id="edit-category" name="category" required>
+            <span id="edit-selected-category" class="category-icon-preview"
+                  title="Choisir une icône"
+                  style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;border:2px solid #65b8f7;background:#fff;cursor:pointer;font-size:1.6em;">
+              <i class="fa-regular fa-circle-question"></i>
+            </span>
+
+            <div id="edit-category-dropdown" class="category-dropdown" style="display:none;">
+              <div class="cp-toolbar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;">
+                <div class="cp-search" style="flex:1;display:flex;gap:.4rem;align-items:center;">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <input id="edit-cp-search-input" class="cp-search-input" type="text" placeholder="Rechercher…" style="width:100%;">
+                </div>
+                <div class="cp-cats" id="edit-cp-cats" style="display:flex;flex-wrap:wrap;gap:.4rem;"></div>
+              </div>
+
+              <div class="icon-picker-list cp-icons" id="edit-cp-icons"
+                  style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.4rem;"></div>
+            </div>
+          </div>
+          </div>
           <select id="edit-type" required>
             <option value="expense">Dépense</option>
             <option value="income">Revenu</option>
           </select>
-        </label>
-        <label>Récurrence :
+        </div>
+
+        <div class="form-row">
+          <label for="edit-recurrence">Récurrence :</label>
           <select id="edit-recurrence">
             <option value="none">Aucune</option>
             <option value="monthly">Mensuelle</option>
+            <option value="yearly">Annuelle</option>
             <option value="installments">Paiement en X fois</option>
           </select>
-        </label>
+        </div>
+
+        <div class="form-row" id="edit-end-row" style="display:none;">
+          <label for="edit-until">Jusqu’à :</label>
+          <input type="text" id="edit-until" class="date-input" placeholder="jj-mm-aaaa" />
+        </div>
+
         <div class="form-row" id="edit-apply-previous-row" style="display:none;">
           <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
             <input type="checkbox" id="edit-apply-previous" />
             Appliquer aux mois antérieurs
           </label>
         </div>
-        <div style="margin-top:1em;display:flex;gap:1em;">
-          <button type="submit">Enregistrer</button>
-          <button type="button" id="edit-cancel-btn">Annuler</button>
+
+        <div class="form-row" id="edit-installments-row" style="display:none;">
+          <label for="edit-installments">Nombre d’échéances :</label>
+          <input type="number" id="edit-installments" min="2" max="24" />
+        </div>
+
+        <hr style="margin:1em 0; border:none; border-top:1px solid #ddd;">
+
+        <div class="form-row">
+          <label for="edit-stats-period">Afficher les statistiques par :</label>
+          <select id="edit-stats-period">
+            <option value="day">Jour (aujourd’hui)</option>
+            <option value="month" selected>Mois</option>
+            <option value="year">Année</option>
+          </select>
+        </div>
+
+        <div style="margin-top:1em;display:flex;gap:.6em;justify-content:flex-end;flex-wrap:wrap;">
+          <button type="button" id="edit-delete-btn" style="background:#d32f2f;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Supprimer la transaction</button>
+          <span style="flex:1 1 auto;"></span>
+          <button type="button" id="edit-cancel-btn" style="background:#777;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Annuler</button>
+          <button type="submit" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Enregistrer</button>
         </div>
       </form>
     </div>
   </div>
+
 <!-- Overlay d'authentification -->
 <div id="auth-overlay" class="modal-bg" style="display:none;">
   <div class="modal-content">
@@ -473,6 +593,64 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+<!-- Bottom sheet — Icon Picker V2 -->
+<div id="icon-sheet" class="sheet" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="sheet__backdrop"></div>
+  <div class="sheet__panel" role="document" tabindex="-1">
+    <div class="sheet__grab"></div>
+    <div class="sheet__header">
+      <h3 class="sheet__title">Choisir une icône</h3>
+      <button class="sheet__close" aria-label="Fermer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="sheet__toolbar">
+      <div class="cp-search">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="ip-search" type="text" placeholder="Rechercher (ex. loyer, courses, essence…)" autocomplete="off">
+      </div>
+      <div id="ip-chips" class="cp-chips" aria-label="Catégories"></div>
+    </div>
+
+    <div id="ip-grid" class="ip-grid" aria-live="polite"></div>
+
+    <div class="sheet__footer">
+      <button id="ip-cancel" class="btn-ghost">Annuler</button>
+      <button id="ip-validate" class="btn-primary" disabled>Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bouton d'installation -->
+<button id="installBtn" style="display:none;">Installer l’app</button>
+
+<script>
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('installBtn');
+  btn.style.display = 'inline-block';
+  btn.onclick = async () => {
+    btn.disabled = true;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    btn.style.display = 'none';
+  };
+});
+</script>
+
+<!-- Script principal (chargé après le parsing du HTML) -->
+<script src="script.js" defer></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .catch(console.error);
+  });
+}
+</script>
+
 </body>
 </html>
