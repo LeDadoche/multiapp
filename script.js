@@ -1244,7 +1244,7 @@ function renderMonthSummary() {
       header.style.fontWeight = '700';
       header.style.display = 'flex';
       header.style.alignItems = 'center';
-      header.innerHTML = `${renderCategoryIconInline(cat)}&nbsp;${label} — ${sum.toFixed(2)}€ · ${items.length} tx`;
+      header.innerHTML = `${renderCategoryIconInline(cat)}&nbsp;${label} — ${sum.toFixed(2)}€ · ${items.length}x`;
 
       // Bouton (▾)
       const toggleBtn = document.createElement('button');
@@ -3977,47 +3977,69 @@ window.__closeIconSheet = closeSheetRestore;
 
 // ======================================================
 //  STATS — Plotly (unique) — périodes FR OK + libellés humains
-//  ==> remplace ENTIEREMENT l'ancien bloc "STATS — Compat: ..."
 // ======================================================
 window.renderStats = function renderStatsPlotly(){
-  const el = document.getElementById('pie-chart');   // <div id="pie-chart">
+  const el = document.getElementById('pie-chart');
   if (!el || !window.Plotly) return;
 
-  // Taille de ta carte (déjà fixée)
-  const FIX_W = 738.4;
-  const FIX_H = 502.833;
+  const CHART_W = 706;
+  const CHART_H = 345;
 
-  // ✅ Taille DU GRAPHE (un peu plus petite que la carte)
-  const CHART_W = Math.floor(FIX_W - 32); // marge visuelle
-  const CHART_H = 345;                    // hauteur confortable
-
-  // Conteneur (on NE fixe plus la hauteur : la carte gère)
-  const holder = el.parentElement || document.getElementById('chart-container');
-  if (holder) {
-    holder.style.width = `${FIX_W}px`;
-    holder.style.maxWidth = `${FIX_W}px`;
-    holder.style.margin = '0 auto';
-    holder.style.boxSizing = 'border-box';
-    holder.style.overflow = 'hidden';
+  // --- Détecte sombre/clair via la VRAIE couleur de fond
+  function getBgColor(node){
+    let e = node;
+    while (e && e !== document.documentElement){
+      const c = getComputedStyle(e).backgroundColor;
+      if (c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)') return c;
+      e = e.parentElement;
+    }
+    return getComputedStyle(document.body).backgroundColor || 'rgb(255,255,255)';
   }
+  function rgbToLum(cstr){
+    const m = cstr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    let r=255,g=255,b=255; if (m){ r=+m[1]; g=+m[2]; b=+m[3]; }
+    const s=[r,g,b].map(v=>{ v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); });
+    return 0.2126*s[0] + 0.7152*s[1] + 0.0722*s[2];
+  }
+  const isDark = rgbToLum(getBgColor(el)) < 0.5;
 
-  // Div Plotly aux dimensions du graphe (pas celles de la carte)
-  el.style.width = `${CHART_W}px`;
-  el.style.height = `${CHART_H}px`;
-  el.style.maxWidth = `${CHART_W}px`;
-  el.style.maxHeight = `${CHART_H}px`;
-  el.style.display = 'block';
+  // --- Couleurs
+  const PALETTE_LIGHT = ['#2E86C1','#F39C12','#27AE60','#E74C3C','#8E44AD','#16A085','#F1C40F'];
+  const PALETTE_DARK  = ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#17becf','#bcbd22'];
+  const GRID_BG       = 'rgba(0,0,0,0)';
+  const SLICE_BORDER  = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.12)';
+  const PLACEHOLDER   = isDark ? '#2b2f36' : '#e9ecef';
+  const HOVER_BG      = isDark ? '#111827' : '#ffffff';
+  const HOVER_BORDER  = isDark ? '#374151' : '#d1d5db';
+  const HOVER_TEXT    = isDark ? '#e5e7eb' : '#111827';
+  const TEXT          = isDark ? '#e6edf3' : '#1f2937'; // texte global
+  const LEGEND_FILL   = isDark ? '#e6edf3' : '#324a52'; // **exigence**: sombre=#e6edf3, clair=#fff
 
-  // === utils (inchangés) ===
-  function normalizePeriod(val) {
-    const s = String(val || '').toLowerCase()
-    .normalize('NFD').replace(/\p{Diacritic}/gu,'')
-    .replace(/\s+/g,'').replace(/-/g,'');
+  // --- Patch CSS légende (couleur + opacité) — réécrit à chaque rendu
+  (function applyLegendFix(){
+    const ID = 'stats-legend-fix';
+    let s = document.getElementById(ID);
+    if (!s) { s = document.createElement('style'); s.id = ID; document.head.appendChild(s); }
+    s.textContent = `
+    #pie-chart .legend,
+    #pie-chart .legend g,
+    #pie-chart .legend .groups,
+    #pie-chart .legend .traces { opacity: 1 !important; }
+    #pie-chart .legend text,
+    #pie-chart .legend .legendtext,
+    #pie-chart .legend .legendtoggle { fill: ${LEGEND_FILL} !important; opacity: 1 !important; }
+    #pie-chart .hovertext text { fill: ${HOVER_TEXT} !important; }`;
+  })();
+
+  // --- Utils
+  function normalizePeriod(val){
+    const s = String(val||'').toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/\s+/g,'').replace(/-/g,'');
     if (['day','today','jour','aujourdhui','auj','cejour'].includes(s)) return 'day';
     if (['year','annee','anneeencours','currentyear','yearcurrent','ytd','yeartodate'].includes(s)) return 'year';
     return 'month';
   }
-  function parseDateAny(raw) {
+  function parseDateAny(raw){
     if (!raw) return null;
     const str = String(raw).trim();
     const m = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
@@ -4037,7 +4059,7 @@ window.renderStats = function renderStatsPlotly(){
     'fa-solid fa-bolt': 'Énergie',
     'fa-solid fa-shield-heart': 'Santé',
   };
-  const toHuman = (cat) => {
+  const toHuman = (cat)=>{
     const s = String(cat||'').trim();
     if (LABELS[s]) return LABELS[s];
     const m = s.match(/fa-[a-z0-9-]+/gi);
@@ -4047,78 +4069,311 @@ window.renderStats = function renderStatsPlotly(){
     }
     return s || 'Autre';
   };
-  const fmtEUR = (n) => Number(n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
-  function getTxs() {
+  const fmtEUR = (n)=>Number(n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  function getTxs(){
     if (Array.isArray(window.transactions)) return window.transactions;
     try { const raw = localStorage.getItem('transactions'); return raw ? JSON.parse(raw) : []; } catch(_) { return []; }
   }
-  function filterByPeriod(txs, periodRaw) {
+  function filterByPeriod(txs, periodRaw){
     const period = normalizePeriod(periodRaw);
     const now = new Date(), y=now.getFullYear(), m=now.getMonth(), d=now.getDate();
-    return txs.filter(t => {
+    return txs.filter(t=>{
       const dt = parseDateAny(t.date || t.day || t.createdAt);
       if (!dt) return false;
-      if (period === 'day')  return dt.getFullYear()===y && dt.getMonth()===m && dt.getDate()===d;
-      if (period === 'year') return dt.getFullYear()===y;
+      if (period==='day')  return dt.getFullYear()===y && dt.getMonth()===m && dt.getDate()===d;
+      if (period==='year') return dt.getFullYear()===y;
       return dt.getFullYear()===y && dt.getMonth()===m;
     });
   }
 
+  // --- Données
   const periodRaw = document.getElementById('stats-period')?.value || 'month';
   const period = normalizePeriod(periodRaw);
   const txs = filterByPeriod(getTxs(), period);
-
   const expenses = txs.filter(t => String(t.type).toLowerCase()==='expense' || Number(t.amount) < 0);
+
   const by = new Map();
-  for (const t of expenses) {
+  for (const t of expenses){
     const k = toHuman(t.category);
-    const v = Math.abs(Number(t.amount) || 0);
-    by.set(k, (by.get(k) || 0) + v);
+    const v = Math.abs(Number(t.amount)||0);
+    by.set(k, (by.get(k)||0)+v);
   }
   const labels = Array.from(by.keys());
   const values = Array.from(by.values());
 
+  // --- Traces
   const data = !values.length ? [{
-    type: 'pie',
-    labels: ['Aucune donnée'],
-    values: [1],
-    textinfo: 'none',
-    hoverinfo: 'none',
-    marker: { colors: ['#e9ecef'] }
+    type:'pie',
+    labels:['Aucune donnée'],
+    values:[1],
+    textinfo:'none',
+    hoverinfo:'none',
+    marker:{ colors:[PLACEHOLDER] }
   }] : [{
-    type: 'pie',
-    labels,
-    values,
-    textinfo: 'label+percent',
-    hovertemplate: '%{label}: %{value:,.2f} € (%{percent})<extra></extra>',
-                      sort: false
+    type:'pie',
+    labels, values,
+    textinfo:'label+percent',
+    hovertemplate:'%{label}: %{value:,.2f} € (%{percent})<extra></extra>',
+                         sort:false,
+                         marker:{
+                           colors: isDark ? PALETTE_DARK : PALETTE_LIGHT,
+                           line:{ color: SLICE_BORDER, width:1 }
+                         },
+                         insidetextfont:{ color: isDark ? '#f9fafb' : '#ffffff' },
+                         outsidetextfont:{ color: isDark ? '#eaeef3' : '#1f2937' }
   }];
 
-  // ⬅️ largeur/hauteur du GRAPHE (pas de la carte)
-  const layout = !values.length ? {
+  // --- Layout (espace bas pour éviter le chevauchement)
+  const layoutCommon = {
     width: CHART_W, height: CHART_H,
-    margin: {l:0,r:0,t:0,b:0},
-    showlegend:false,
-    annotations: [{ text: 'Aucune dépense sur la période', showarrow:false, y:0.5 }]
-  } : {
-    width: CHART_W, height: CHART_H,
-    margin: {l:0,r:0,t:0,b:0},
-    showlegend:true,
-    legend: { orientation: 'h', y: -0.12 }
+    paper_bgcolor: GRID_BG, plot_bgcolor: GRID_BG,
+    margin:{ l:0, r:0, t:0, b:60 },
+    font:{ color: TEXT },
+    hoverlabel:{ bgcolor:HOVER_BG, bordercolor:HOVER_BORDER, font:{ color:HOVER_TEXT }},
+    legend:{ orientation:'h', y:-0.02, yanchor:'top', font:{ color: TEXT }, bgcolor: GRID_BG }
   };
+  const layout = !values.length
+  ? { ...layoutCommon, showlegend:false,
+    annotations:[{ text:'Aucune dépense sur la période', font:{color:TEXT}, showarrow:false, y:0.5 }] }
+    : { ...layoutCommon, showlegend:true };
 
-  Plotly.react(el, data, layout, {
-    responsive: false,   // on fige la taille du graphe
-    displaylogo: false,
-    modeBarButtonsToRemove: ['lasso2d','select2d']
-  });
+    Plotly.react(el, data, layout, {
+      responsive:false, displaylogo:false,
+      modeBarButtonsToRemove:['lasso2d','select2d']
+    });
 
-  const info = document.getElementById('stats-info');
-  if (info) {
-    const total = values.reduce((a,b)=>a+b,0);
-    const txtPer = period === 'day' ? 'aujourd’hui' : period === 'year' ? 'cette année' : 'ce mois';
-    info.textContent = values.length
-    ? `Total des dépenses ${txtPer} : ${fmtEUR(total)}`
-    : `Aucune dépense ${txtPer}.`;
-  }
+    // --- Total
+    const info = document.getElementById('stats-info');
+    if (info){
+      const total = values.reduce((a,b)=>a+b,0);
+      const txtPer = period==='day' ? 'aujourd’hui' : period==='year' ? 'cette année' : 'ce mois';
+      info.textContent = values.length
+      ? `Total des dépenses ${txtPer} : ${fmtEUR(total)}`
+      : `Aucune dépense ${txtPer}.`;
+    }
+
+    // === Re-rendu auto au changement de thème (sans reload) ===
+    (function installThemeObserver(){
+      if (window.__statsThemeObserver) return; // une seule fois
+      const targets = [document.documentElement, document.body, el, el.parentElement].filter(Boolean);
+      const obs = new MutationObserver(() => {
+        clearTimeout(window.__statsThemeTick);
+        window.__statsThemeTick = setTimeout(() => window.renderStats(), 60); // debounce
+      });
+      for (const t of targets){
+        obs.observe(t, { attributes:true, attributeFilter:['class','style','data-theme'] });
+      }
+      // Écoute la préférence OS aussi (au cas où)
+      try {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const fn = () => window.renderStats();
+        if (mq.addEventListener) mq.addEventListener('change', fn);
+        else if (mq.addListener) mq.addListener(fn);
+        window.__statsThemeMQ = mq;
+      } catch(_) {}
+      window.__statsThemeObserver = obs;
+    })();
 };
+
+// ===============================
+//  "Reste à vivre" — bouton #calculate-saving
+// ===============================
+(function setupResteAVivre() {
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  // --- Versionning pour détecter des changements APRES calcul ---
+  let txVersion = 0;        // incrémenté à chaque sauvegarde
+  let lastCalcVersion = -1; // version au moment du dernier calcul
+  let suppressChange = false; // ignore les changements internes (insertion salaire pendant le calcul)
+
+function parseNum(v){
+  const n = Number(String(v ?? '').replace(',', '.'));
+  return isFinite(n) ? n : 0;
+}
+function sameMonth(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth(); }
+function euros(n){
+  try { return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+  catch(_) { return (Math.round(n*100)/100).toFixed(2)+' €'; }
+}
+function getAllTransactions(){
+  try { if (Array.isArray(window.transactions)) return window.transactions; } catch(_){}
+  try { if (Array.isArray(transactions)) return transactions; } catch(_){}
+  return [];
+}
+function getCurrentRefMonth(){
+  try { if (window.currentMonth instanceof Date && !isNaN(window.currentMonth)) return window.currentMonth; } catch(_){}
+  try { if (currentMonth instanceof Date && !isNaN(currentMonth)) return currentMonth; } catch(_){}
+  return new Date();
+}
+function parseIsoDate(iso){ const d = new Date(iso); return isNaN(d) ? null : d; }
+
+// Lecture jj-mm-aaaa ou ISO
+function getSalaryIsoDate(){
+  if (typeof readDateInput === 'function'){
+    const iso = readDateInput('salary-date');
+    if (iso) return iso;
+  }
+  const raw = $('#salary-date')?.value?.trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const m = raw.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  const d = new Date(raw);
+  return isNaN(d) ? null :
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function computeMonthFlows(){
+  const ref = getCurrentRefMonth();
+  let income = 0, expense = 0;
+  for (const tx of getAllTransactions()){
+    const d = parseIsoDate(tx?.date);
+    if (!d || !sameMonth(d, ref)) continue;
+    const amt = Math.abs(parseNum(tx?.amount));
+    const type = String(tx?.type || '').toLowerCase();
+    if (type === 'income') income += amt;
+    else if (type === 'expense') expense += amt;
+  }
+  return { income, expense };
+}
+
+function hasSalaryTxInCurrentMonth(){
+  const ref = getCurrentRefMonth();
+  return getAllTransactions().some(t => t?.isSalary && (()=>{
+    const d = parseIsoDate(t.date);
+    return d && sameMonth(d, ref);
+  })());
+}
+
+// Crée / met à jour la transaction Salaire (icône briefcase) PENDANT le calcul
+// sans déclencher l'apparition de "Actualiser".
+function maybeUpsertSalaryTransaction() {
+  const amount = parseNum($('#salary')?.value);
+  const iso = getSalaryIsoDate();
+  if (!iso || amount <= 0) return false;
+
+  const arr = getAllTransactions();
+  let tx = arr.find(t => t?.isSalary === true && t?.date === iso);
+
+  if (tx) {
+    tx.amount = amount;
+    tx.type = 'income';
+    tx.category = 'fa-solid fa-briefcase';
+    tx.description = 'Salaire';
+    tx.recurrence = 'none';
+    tx.applyPrev = false;
+  } else {
+    tx = {
+      id: (crypto?.randomUUID ? crypto.randomUUID() : String(Date.now())),
+ type: 'income',
+ category: 'fa-solid fa-briefcase',
+ description: 'Salaire',
+ amount: amount,
+ date: iso,
+ recurrence: 'none',
+ applyPrev: false,
+ isSalary: true
+    };
+    arr.push(tx);
+  }
+
+  try {
+    suppressChange = true; // ne pas compter cette sauvegarde pour "Actualiser"
+    if (typeof saveTransactionsLocal === 'function') saveTransactionsLocal();
+    if (typeof isDropboxConnected === 'function' && isDropboxConnected()
+      && typeof saveTransactionsDropbox === 'function') saveTransactionsDropbox();
+  } finally {
+    suppressChange = false;
+  }
+  try { if (typeof updateViews === 'function') updateViews(); } catch(_){}
+  return true;
+}
+
+// Bouton "Actualiser"
+function showRefresh(show){
+  const b = $('#refresh-after-salary');
+  if (!b) return;
+  b.style.display = show ? 'inline-block' : 'none';
+}
+
+// Rendu gelé (jusqu'à clic sur "Actualiser")
+function renderResult({income, expense, savings, effectiveSalary}){
+  const el = $('#saving-result');
+  if (!el) return;
+  const totalIncome = income + effectiveSalary;
+  const reste = totalIncome - expense - savings;
+  const color = reste < 0 ? '#b00020' : '#0a7d28';
+
+  el.innerHTML =
+  `<strong>Revenus</strong> : <span id="sr-income">${euros(totalIncome)}</span><br>` +
+  `<strong>Dépenses</strong> : <span id="sr-expense">${euros(expense)}</span><br>` +
+  `<strong>Épargne</strong> : <span id="sr-savings">${euros(savings)}</span><br>` +
+  `<hr style="opacity:.3">` +
+  `<strong>Reste à vivre :</strong> <span id="sr-reste" style="font-weight:700; color:${color}">${euros(reste)}</span>`;
+}
+
+function recalcAndRender({ignoreSalaryFieldIfTxExists=false} = {}){
+  const savings = parseNum($('#savings')?.value);
+  const salaryField = parseNum($('#salary')?.value);
+  const { income, expense } = computeMonthFlows();
+  const effectiveSalary = (ignoreSalaryFieldIfTxExists && hasSalaryTxInCurrentMonth()) ? 0 : salaryField;
+  renderResult({ income, expense, savings, effectiveSalary });
+}
+
+// Patch: détecter un enregistrement de transactions APRES calcul, sans recalc auto
+(function patchSaveFns(){
+  try {
+    const orig = typeof saveTransactionsLocal === 'function' ? saveTransactionsLocal : null;
+    if (orig) {
+      window.saveTransactionsLocal = function(...args){
+        const r = orig.apply(this, args);
+        txVersion++;
+        if (!suppressChange && lastCalcVersion >= 0 && txVersion > lastCalcVersion) {
+          showRefresh(true); // juste afficher le bouton, ne pas recalculer
+        }
+        return r;
+      };
+    }
+  } catch(_){}
+  try {
+    const origDbx = typeof saveTransactionsDropbox === 'function' ? saveTransactionsDropbox : null;
+    if (origDbx) {
+      window.saveTransactionsDropbox = function(...args){
+        const r = origDbx.apply(this, args);
+        txVersion++;
+        if (!suppressChange && lastCalcVersion >= 0 && txVersion > lastCalcVersion) {
+          showRefresh(true); // idem côté Dropbox
+        }
+        return r;
+      };
+    }
+  } catch(_){}
+})();
+
+// Clic "Calculer le reste à vivre"
+$('#calculate-saving')?.addEventListener('click', (e) => {
+  e.preventDefault();
+
+  // Met à jour / crée le Salaire (sans déclencher le bouton)
+  maybeUpsertSalaryTransaction();
+
+  // Calcul instantané (état gelé après)
+  recalcAndRender({ ignoreSalaryFieldIfTxExists: true });
+
+  // À partir de maintenant, toute nouvelle sauvegarde affichera "Actualiser"
+  lastCalcVersion = txVersion;
+  showRefresh(false);
+});
+
+// Clic "Actualiser" -> on recharge la vue + on recalcule
+$('#refresh-after-salary')?.addEventListener('click', () => {
+  try { if (typeof updateViews === 'function') updateViews(); else location.reload(); }
+  catch(_){ location.reload(); }
+  recalcAndRender({ ignoreSalaryFieldIfTxExists: true });
+  lastCalcVersion = txVersion; // on repart de cet état comme baseline
+  showRefresh(false);
+});
+
+// Option console
+window.calculateResteAVivre = () => recalcAndRender({ ignoreSalaryFieldIfTxExists: true });
+})();

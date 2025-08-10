@@ -1334,3 +1334,61 @@ overflow: hidden;       /* évite tout débordement visuel */
 /* Le graphe doit remplir la carte sans dépasser */
 #chart-container { width: 100%; max-width: 100%; }
 #pie-chart { width: 100% !important; max-width: 100%; display: block; }
+
+/* ===========================
+ *   Alignement section Salaire
+ *   =========================== */
+#salary-section .form-row{
+display:flex;
+align-items:center;
+gap:12px;
+margin:8px 0;
+}
+#salary-section .form-row label{
+flex:0 0 220px;     /* colonne labels alignée */
+text-align:left;
+}
+#salary-section .form-row input[type="number"],
+#salary-section .form-row input[type="text"]{
+flex:1 1 auto;      /* colonnes inputs alignées */
+min-width:0;
+}
+
+/* Ligne des boutons: à droite, avec Actualiser à gauche de Calculer */
+#salary-section .form-row.buttons-row{
+align-items:center;
+}
+#salary-section .form-row.buttons-row .btns-right{
+margin-left:220px;  /* s’aligne sous la colonne inputs */
+flex:1 1 auto;
+display:flex;
+justify-content:flex-end; /* tout à droite */
+gap:8px;                  /* Actualiser à gauche de Calculer */
+}
+/* annule l'ancien margin-left pour les boutons de cette ligne */
+#salary-section .form-row.buttons-row button{
+margin-left:0;
+}
+
+/* Responsive simple */
+@media (max-width: 600px){
+  #salary-section .form-row{
+  flex-wrap:wrap;
+  }
+  #salary-section .form-row label{
+  flex:1 1 100%;
+  }
+  #salary-section .form-row.buttons-row .btns-right{
+  margin-left:0;
+  justify-content:flex-start;
+  }
+}
+
+/* Boutons plus compacts dans la section Salaire */
+#salary-section .btns-right button{
+width: auto;           /* ne pas s'étirer */
+min-width: unset;
+white-space: nowrap;
+padding: 8px 12px;     /* moins large que par défaut */
+font-size: 0.95rem;
+}

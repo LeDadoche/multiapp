@@ -211,7 +211,7 @@
             <div class="form-row" id="apply-previous-row" style="display:none;">
               <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
                 <input type="checkbox" id="apply-previous" />
-                Appliquer aux mois antérieurs (depuis janvier)
+                Appliquer aux mois antérieurs
               </label>
             </div>
 
@@ -255,17 +255,30 @@
         </section>
         <section id="salary-section">
           <h2>Salaire et économies</h2>
+
           <div class="form-row">
             <label for="salary">Salaire mensuel (€) :</label>
             <input type="number" id="salary" step="0.01" />
           </div>
+
+          <div class="form-row">
+            <label for="salary-date">Date de versement :</label>
+            <input type="text" id="salary-date" class="date-input" placeholder="jj-mm-aaaa" />
+          </div>
+
           <div class="form-row">
             <label for="savings">Épargne désirée (€) :</label>
             <input type="number" id="savings" step="0.01" />
           </div>
-          <div class="form-row">
-            <button id="calculate-saving">Calculer le reste à vivre</button>
+
+          <!-- Ligne des boutons, alignée à droite -->
+          <div class="form-row buttons-row">
+            <div class="btns-right">
+              <button id="refresh-after-salary" class="btn-primary" style="display:none;">Actualiser</button>
+              <button id="calculate-saving" class="btn-primary">Calculer le reste à vivre</button>
+            </div>
           </div>
+
           <p id="saving-result"></p>
         </section>
         <section id="calendar-section">
@@ -459,7 +472,7 @@
         <div class="form-row" id="add-apply-previous-row" style="display:none;">
           <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
             <input type="checkbox" id="add-apply-previous" />
-            Appliquer aux mois antérieurs (depuis janvier)
+            Appliquer aux mois antérieurs
           </label>
         </div>
 
