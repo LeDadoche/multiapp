@@ -1265,6 +1265,7 @@ function closeEditModal() {
   const modal = document.getElementById('modal-edit-transaction');
   if (modal) modal.style.display = 'none';
 }
+
 document.getElementById('edit-cancel-btn')?.addEventListener('click', closeEditModal);
 
 document.getElementById('edit-delete-btn')?.addEventListener('click', () => {
@@ -2556,3 +2557,164 @@ document.addEventListener('click', function(e){
     window.__applyIconSelection && window.__applyIconSelection();
   }
 }, true); // <-- "true" = priorité maximale
+
+// ===============================
+//  EXPORT PDF — UI + Génération
+// ===============================
+(function setupPdfExport() {
+  const $ = (sel, ctx = document) => ctx.querySelector(sel);
+
+  // Boutons & modale
+  const btnOpen  = $('#export-pdf');
+  const modal    = $('#export-pdf-modal');
+  const btnRun   = $('#export-pdf-run');
+  const btnCancel= $('#export-pdf-cancel');
+
+  const cbCalendar = $('#exp-calendar');
+  const cbMonth    = $('#exp-month');
+  const cbStats    = $('#exp-stats');
+  const cbHistory  = $('#exp-history');
+  const fileInput  = $('#export-filename');
+
+  // Nom par défaut YYYY-MM
+  try {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    if (fileInput && fileInput.value.includes('{{YYYY-MM}}')) {
+      fileInput.value = fileInput.value.replace('{{YYYY-MM}}', `${y}-${m}`);
+    }
+  } catch(e){}
+
+  function openModal() {
+    if (!modal) return;
+    modal.style.display = 'block';
+  }
+  function closeModal() {
+    if (!modal) return;
+    modal.style.display = 'none';
+  }
+
+  // Fermer sur fond & Escape
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal?.style.display === 'block') closeModal();
+    });
+
+      btnOpen?.addEventListener('click', openModal);
+      btnCancel?.addEventListener('click', closeModal);
+
+      // ---- Helpers capture PDF ----
+      async function ensureVisibleForCapture(el) {
+        // Remonte la chaîne DOM et force display:block sur ce qui est caché (ex: .tab-content)
+        const touched = [];
+        let node = el;
+        while (node && node !== document.body) {
+          const cs = window.getComputedStyle(node);
+          if (cs && cs.display === 'none') {
+            touched.push({ node, old: node.style.display });
+            node.style.display = 'block';
+          }
+          node = node.parentElement;
+        }
+        return () => {
+          touched.forEach(({ node, old }) => { node.style.display = old; });
+        };
+      }
+
+      async function captureSelectorToPdf(pdf, title, selector, opts = {}) {
+        const el = document.querySelector(selector);
+        if (!el) return;
+
+        const restore = await ensureVisibleForCapture(el);
+        try {
+          // Titre
+          const margin = 10;
+          const pageW  = pdf.internal.pageSize.getWidth();
+          const pageH  = pdf.internal.pageSize.getHeight();
+          let y = pdf.__cursorY ?? margin;
+
+          // Ajoute un titre (si fourni)
+          if (title) {
+            pdf.setFontSize(16);
+            pdf.text(title, margin, y);
+            y += 6;
+          }
+
+          // Capture DOM -> image
+          const canvas = await html2canvas(el, {
+            backgroundColor: null,           // préserve le thème
+            scale: window.devicePixelRatio > 1 ? 2 : 1.5
+          });
+          const imgData = canvas.toDataURL('image/png');
+          const targetW = pageW - 2*margin;
+          const imgH = canvas.height * (targetW / canvas.width);
+          const remaining = pageH - y - margin;
+
+          // Nouvelle page si ça ne tient pas
+          if (imgH > remaining) {
+            pdf.addPage();
+            y = margin;
+          }
+
+          pdf.addImage(imgData, 'PNG', margin, y, targetW, imgH);
+          pdf.__cursorY = y + imgH + 8; // nouvelle position "courante"
+          // Saut de page implicite si on dépasse trop
+          if (pdf.__cursorY > pageH - margin) {
+            pdf.addPage();
+            pdf.__cursorY = margin;
+          }
+        } finally {
+          restore(); // remet l'état d'affichage d'origine
+        }
+      }
+
+      async function runExport() {
+        const wantCalendar = cbCalendar?.checked;
+        const wantMonth    = cbMonth?.checked;
+        const wantStats    = cbStats?.checked;
+        const wantHistory  = cbHistory?.checked;
+
+        if (!wantCalendar && !wantMonth && !wantStats && !wantHistory) {
+          alert('Sélectionne au moins un élément à exporter.');
+          return;
+        }
+
+        // UI lock
+        const oldText = btnRun.innerHTML;
+        btnRun.disabled = true;
+        btnRun.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Génération…';
+
+        try {
+          const { jsPDF } = window.jspdf || {};
+          if (!jsPDF || !window.html2canvas) {
+            alert('Librairies PDF manquantes. Vérifie les balises <script> html2canvas et jsPDF.');
+            return;
+          }
+
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          pdf.__cursorY = 10; // curseur vertical "global"
+
+          // Ordre logique
+          if (wantCalendar) await captureSelectorToPdf(pdf, 'Calendrier', '#calendar-section');
+          if (wantMonth)    await captureSelectorToPdf(pdf, 'Récapitulatif du mois', '#month-summary');
+          if (wantStats)    await captureSelectorToPdf(pdf, 'Statistiques', '#stats-section');
+          if (wantHistory)  await captureSelectorToPdf(pdf, 'Historique', '#transactions-section');
+
+          const name = (fileInput?.value || 'finances.pdf').trim().replace(/\s+/g,'-');
+          pdf.save(name || 'finances.pdf');
+
+          closeModal();
+        } catch (err) {
+          console.error('Erreur export PDF:', err);
+          alert('Échec de la génération du PDF. Regarde la console pour les détails.');
+        } finally {
+          btnRun.disabled = false;
+          btnRun.innerHTML = oldText;
+        }
+      }
+
+      btnRun?.addEventListener('click', runExport);
+})();

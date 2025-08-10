@@ -354,7 +354,12 @@
         </section>
         <section id="export-section">
           <h2>Exportation</h2>
-          <button id="export-json">Exporter en JSON</button>
+          <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+            <button id="export-json">Exporter en JSON</button>
+            <button id="export-pdf" title="Exporter en PDF">
+              <i class="fa-solid fa-file-pdf"></i> Exporter en PDF
+            </button>
+          </div>
         </section>
       </div>
       </div><!-- fin main-container finances -->
@@ -473,84 +478,147 @@
   </div>
 </div>
 
-  <!-- Modale Edition Historique (propre) -->
-  <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
-    <div class="modal-content" style="max-width:680px;">
-      <h3 style="margin-top:0;">Modifier la transaction</h3>
+      <!-- Modale Edition Historique (propre) -->
+      <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
+        <div class="modal-content" style="max-width:680px;">
+          <h3 style="margin-top:0;">Modifier la transaction</h3>
 
-      <form id="edit-transaction-form" novalidate>
-        <input type="hidden" id="edit-id" />
+          <form id="edit-transaction-form" novalidate>
+            <input type="hidden" id="edit-id" />
 
-        <div class="form-row">
-          <label for="edit-description">Description :</label>
-          <input type="text" id="edit-description" required />
+            <div class="form-row">
+              <label for="edit-description">Description :</label>
+              <input type="text" id="edit-description" required />
+            </div>
+
+            <div class="form-row">
+              <label for="edit-amount">Montant (€) :</label>
+              <input type="number" id="edit-amount" step="0.01" required />
+            </div>
+
+            <div class="form-row">
+              <label for="edit-date">Date :</label>
+              <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required />
+            </div>
+
+            <div class="form-row">
+              <label for="edit-type">Type :</label>
+            <!-- Catégorie (picker V2) -->
+            <div class="form-row">
+              <label for="edit-category">Catégorie :</label>
+              <div class="category-picker-v2">
+                <input type="hidden" id="edit-category" name="category" required>
+                <button
+                  type="button"
+                  class="cat-trigger"
+                  data-target-input="edit-category"
+                  data-target-preview="edit-selected-category"
+                  aria-haspopup="dialog"
+                  aria-controls="icon-sheet"
+                  title="Choisir une catégorie">
+                  <span id="edit-selected-category" class="cat-badge">
+                    <i class="fa-regular fa-circle-question"></i>
+                  </span>
+                  <span class="cat-current-label">Choisir</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-row" id="edit-apply-previous-row" style="display:none;">
+              <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+                <input type="checkbox" id="edit-apply-previous" />
+                Appliquer aux mois antérieurs
+              </label>
+            </div>
+
+            <div class="form-row" id="edit-installments-row" style="display:none;">
+              <label for="edit-installments">Nombre d’échéances :</label>
+              <input type="number" id="edit-installments" min="2" max="24" />
+            </div>
+
+            <hr style="margin:1em 0; border:none; border-top:1px solid #ddd;">
+
+            <div class="form-row">
+              <label for="edit-stats-period">Afficher les statistiques par :</label>
+              <select id="edit-stats-period">
+                <option value="day">Jour (aujourd’hui)</option>
+                <option value="month" selected>Mois</option>
+                <option value="year">Année</option>
+              </select>
+            </div>
+
+            <div style="margin-top:1em;display:flex;gap:.6em;justify-content:flex-end;flex-wrap:wrap;">
+              <button type="button" id="edit-delete-btn" style="background:#d32f2f;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Supprimer la transaction</button>
+              <span style="flex:1 1 auto;"></span>
+              <button type="button" id="edit-cancel-btn" style="background:#777;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Annuler</button>
+              <button type="submit" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Enregistrer</button>
+            </div>
+          </form>
         </div>
+      </div>
 
-        <div class="form-row">
-          <label for="edit-amount">Montant (€) :</label>
-          <input type="number" id="edit-amount" step="0.01" required />
-        </div>
+    </div>
+</div>
 
-        <div class="form-row">
-          <label for="edit-date">Date :</label>
-          <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required />
-        </div>
+<!-- === AJOUT : Modale Export PDF === -->
+<div id="export-pdf-modal" class="modal-bg" style="display:none;">
+  <div class="modal-content" style="max-width:680px;">
+    <h3 style="margin-top:0;">Exporter en PDF</h3>
 
-        <div class="form-row">
-          <label for="edit-type">Type :</label>
-        <!-- Catégorie (picker V2) -->
-        <div class="form-row">
-          <label for="edit-category">Catégorie :</label>
-          <div class="category-picker-v2">
-            <input type="hidden" id="edit-category" name="category" required>
-            <button
-              type="button"
-              class="cat-trigger"
-              data-target-input="edit-category"
-              data-target-preview="edit-selected-category"
-              aria-haspopup="dialog"
-              aria-controls="icon-sheet"
-              title="Choisir une catégorie">
-              <span id="edit-selected-category" class="cat-badge">
-                <i class="fa-regular fa-circle-question"></i>
-              </span>
-              <span class="cat-current-label">Choisir</span>
-            </button>
-          </div>
-        </div>
+    <div class="export-grid">
+      <label class="export-opt">
+        <input type="checkbox" id="exp-calendar" checked>
+        <span class="opt-icon"><i class="fa-solid fa-calendar-days"></i></span>
+        <span class="opt-text">
+          <strong>Calendrier</strong>
+          <small>Le mois courant avec les marquages</small>
+        </span>
+      </label>
 
-        <div class="form-row" id="edit-apply-previous-row" style="display:none;">
-          <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
-            <input type="checkbox" id="edit-apply-previous" />
-            Appliquer aux mois antérieurs
-          </label>
-        </div>
+      <label class="export-opt">
+        <input type="checkbox" id="exp-month" checked>
+        <span class="opt-icon"><i class="fa-solid fa-list"></i></span>
+        <span class="opt-text">
+          <strong>Récapitulatif du mois</strong>
+          <small>Transactions groupées / triées</small>
+        </span>
+      </label>
 
-        <div class="form-row" id="edit-installments-row" style="display:none;">
-          <label for="edit-installments">Nombre d’échéances :</label>
-          <input type="number" id="edit-installments" min="2" max="24" />
-        </div>
+      <label class="export-opt">
+        <input type="checkbox" id="exp-stats" checked>
+        <span class="opt-icon"><i class="fa-solid fa-chart-pie"></i></span>
+        <span class="opt-text">
+          <strong>Graphes</strong>
+          <small>La section Statistiques (camembert)</small>
+        </span>
+      </label>
 
-        <hr style="margin:1em 0; border:none; border-top:1px solid #ddd;">
+      <label class="export-opt">
+        <input type="checkbox" id="exp-history">
+        <span class="opt-icon"><i class="fa-solid fa-clock-rotate-left"></i></span>
+        <span class="opt-text">
+          <strong>Historique</strong>
+          <small>Liste des transactions</small>
+        </span>
+      </label>
+    </div>
 
-        <div class="form-row">
-          <label for="edit-stats-period">Afficher les statistiques par :</label>
-          <select id="edit-stats-period">
-            <option value="day">Jour (aujourd’hui)</option>
-            <option value="month" selected>Mois</option>
-            <option value="year">Année</option>
-          </select>
-        </div>
+    <div class="export-meta">
+      <label for="export-filename" style="font-weight:700; color:#366f8c;">Nom du fichier</label>
+      <input type="text" id="export-filename" value="finances-{{YYYY-MM}}.pdf" />
+      <div class="export-tips">
+        Astuce : ouvre l’onglet <em>Statistiques</em> juste avant d’exporter pour avoir un graphe à jour.
+      </div>
+    </div>
 
-        <div style="margin-top:1em;display:flex;gap:.6em;justify-content:flex-end;flex-wrap:wrap;">
-          <button type="button" id="edit-delete-btn" style="background:#d32f2f;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Supprimer la transaction</button>
-          <span style="flex:1 1 auto;"></span>
-          <button type="button" id="edit-cancel-btn" style="background:#777;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Annuler</button>
-          <button type="submit" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Enregistrer</button>
-        </div>
-      </form>
+    <div style="display:flex; gap:.6rem; justify-content:flex-end; margin-top:1rem;">
+      <button type="button" id="export-pdf-cancel" class="btn-ghost">Annuler</button>
+      <button type="button" id="export-pdf-run" class="btn-primary">
+        <i class="fa-solid fa-file-arrow-down"></i> Générer le PDF
+      </button>
     </div>
   </div>
+</div>
 
 <!-- Overlay d'authentification -->
 <div id="auth-overlay" class="modal-bg" style="display:none;">
@@ -632,6 +700,10 @@ window.addEventListener('beforeinstallprompt', (e) => {
   };
 });
 </script>
+
+<!-- jsPDF & html2canvas pour l'export PDF -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <!-- Script principal (chargé après le parsing du HTML) -->
 <script src="script.js" defer></script>

@@ -1170,3 +1170,92 @@ pointer-events: none;    /* désactivé = vraiment inactif */
 #icon-sheet .sheet__panel { position: absolute; left:0; right:0; bottom:0; z-index: 1; pointer-events: auto; }
 
 #icon-sheet[aria-hidden="true"]{ display:none !important; }
+
+.profile-menu {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 5000;
+}
+
+.profile-dropdown {
+  position: fixed;
+  top: 46px;
+  right: 12px;
+  z-index: 5001;
+}
+
+.profile-menu {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 5000;
+}
+
+.profile-trigger {
+  background: #65b8f7 !important; /* même bleu que le bandeau */
+  color: #fff !important;
+}
+
+.profile-dropdown {
+  position: fixed;
+  top: 46px;
+  right: 12px;
+  z-index: 5001;
+}
+
+/* ===== Export PDF (DA cohérente) ===== */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: .7rem;
+  margin-top: .6rem;
+}
+@media (max-width: 560px) {
+  .export-grid { grid-template-columns: 1fr; }
+}
+
+.export-opt {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: .6rem;
+  align-items: center;
+  padding: .7rem .8rem;
+  border: 1px solid #c3dbe9;
+  border-radius: 10px;
+  background: #f6fbfd;
+  cursor: pointer;
+  user-select: none;
+}
+.export-opt:hover { background: #eaf6fd; border-color: var(--color-primary); }
+.export-opt input[type="checkbox"] { accent-color: var(--color-primary); }
+.export-opt .opt-icon {
+  width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: #eef6fa; color: #27524b; border: 1px dashed #c3dbe9;
+  font-size: 1.1rem;
+}
+.export-opt .opt-text small { display:block; color:#6a7f88; }
+
+.export-meta {
+  margin-top: .9rem;
+  display: grid;
+  gap: .45rem;
+}
+.export-meta input[type="text"] {
+  padding: .55rem .6rem;
+  border: 1.4px solid #c3dbe9;
+  border-radius: 8px;
+}
+.export-tips {
+  font-size: .92rem;
+  color: #6a7f88;
+}
+
+/* Dark mode */
+.dark-mode .export-opt { background:#1a1a1a; border-color:#303030; }
+.dark-mode .export-opt:hover { background:#2a2a2a; border-color: var(--color-primary); }
+.dark-mode .export-opt .opt-icon { background:#202020; color:#e3e3e3; border-color:#303030; }
+.dark-mode .export-meta input[type="text"] {
+  background:#1a1a1a; color: var(--on-surface); border-color:#303030;
+}
