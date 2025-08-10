@@ -176,6 +176,8 @@ section {
   border-radius: 10px;
   box-shadow: 0 1px 5px #d4e5fc33;
   min-width: 320px;
+  width: 100%;            /* ⬅️ occupe toute la largeur disponible */
+  box-sizing: border-box; /* ⬅️ évite de dépasser avec le padding */
 }
 
 /* --------- Form --------- */
@@ -1259,3 +1261,76 @@ pointer-events: none;    /* désactivé = vraiment inactif */
 .dark-mode .export-meta input[type="text"] {
   background:#1a1a1a; color: var(--on-surface); border-color:#303030;
 }
+
+/* === Total du mois (Récap) === */
+.month-total {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin: .5rem 0 1rem;
+  padding: .5rem .75rem;
+  background: #f0f8ff;
+  border: 1px solid #c3dbe9;
+  border-radius: 10px;
+  font-weight: 700;
+  color: #27524b;
+}
+.dark-mode .month-total {
+  background: #1a1a1a;
+  border-color: #303030;
+  color: #eaeaea;
+}
+.month-total .amount.negative { color: #b00020; }   /* rouge si négatif */
+.month-total .amount.positive { color: #0a7d28; }   /* vert si positif  */
+
+/* === Récap: Revenus / Dépenses / Solde === */
+.month-total{
+  display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; justify-content:flex-start;
+  margin:.5rem 0 1rem; padding:.6rem .75rem;
+  background:#f0f8ff; border:1px solid #c3dbe9; border-radius:10px;
+  font-weight:700; color:#27524b;
+}
+.dark-mode .month-total{ background:#1a1a1a; border-color:#303030; color:#eaeaea; }
+
+.month-total .kpi{
+  display:flex; align-items:center; gap:.4rem;
+  padding:.35rem .7rem; border-radius:999px; border:1px solid transparent; font-weight:700;
+}
+.month-total .kpi .label{ opacity:.85; font-weight:600; }
+.month-total .kpi .amount{ font-variant-numeric: tabular-nums; }
+
+/* Revenus (vert) */
+.kpi--income{ background:#eefbf2; border-color:#cdeed8; color:#0a7d28; }
+.dark-mode .kpi--income{ background:#102015; border-color:#23442c; color:#8ae09f; }
+
+/* Dépenses (rouge) */
+.kpi--expense{ background:#fff0f0; border-color:#f3cccc; color:#b00020; }
+.dark-mode .kpi--expense{ background:#261416; border-color:#4a2a2e; color:#ff9aa4; }
+
+/* Solde (bleuté) */
+.kpi--net{ background:#eef6fd; border-color:#c3dbe9; color:#27524b; }
+.dark-mode .kpi--net{ background:#162027; border-color:#2c3a44; color:#cfe9f7; }
+
+/* Compteur de transactions dans les en-têtes de groupes */
+.group-count{
+  margin-left:.4rem;
+  font-weight:600;
+  color:#6a7f88;
+  font-size:.95em;
+}
+.dark-mode .group-count{ color:#aeb8bd; }
+
+/* === Carte Statistiques : taille fixe === */
+#stats-section {
+width: 738.4px;         /* largeur voulue */
+max-width: 738.4px;
+height: 502.833px;      /* hauteur voulue */
+box-sizing: border-box; /* padding inclus dans la taille */
+margin: 0 auto;         /* centrage */
+overflow: hidden;       /* évite tout débordement visuel */
+}
+
+/* Le graphe doit remplir la carte sans dépasser */
+#chart-container { width: 100%; max-width: 100%; }
+#pie-chart { width: 100% !important; max-width: 100%; display: block; }

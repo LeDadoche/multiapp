@@ -51,6 +51,8 @@
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Plotly.js 3.0.3 (dernière stable 3.x au moment où j’écris) -->
+  <script src="https://cdn.plot.ly/plotly-3.0.3.min.js"></script>
 </head>
 
 <body>
@@ -310,16 +312,25 @@
             </aside>
           <!-- Récapitulatif du mois -->
           <section class="month-summary" id="month-summary">
+            <!-- Titre -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6em;">
               <h3 style="margin: 0;">Récapitulatif du mois</h3>
-              <button id="month-sort-btn" title="Changer le tri" style="background:none;border:none;cursor:pointer;font-size:1.3em;color:#27524b;">
+            </div>
+
+            <!-- NOTE: le bloc "Total du mois" est inséré ici par le JS (juste après le H3) -->
+
+            <!-- Contrôles déplacés SOUS le total -->
+            <div id="month-controls" style="display:flex; gap:.6rem; align-items:center; margin:.4rem 0 .6rem; color:#27524b;">
+              <button id="month-sort-btn" title="Changer le tri" style="background:transparent;border:none;cursor:pointer;font-size:1.3em;color:inherit;">
                 <i id="month-sort-icon" class="fa-solid fa-calendar-day"></i>
               </button>
-              <label style="font-size: 0.9em; color: #27524b; display: flex; align-items: center; gap: 0.4em;">
+              <label for="group-by-category" style="font-size: 0.9em; display: flex; align-items: center; gap: 0.4em;">
                 <input type="checkbox" id="group-by-category" />
                 Regrouper par catégorie
               </label>
             </div>
+
+            <!-- Liste -->
             <ul id="month-tx-list"></ul>
           </section>
         </div>
@@ -339,9 +350,9 @@
               <option value="year">Année en cours</option>
             </select>
           </div>
-          <div id="chart-container">
-            <canvas id="pie-chart" width="300" height="300"></canvas>
-          </div>
+            <div id="chart-container">
+              <div id="pie-chart" style="height:320px;"></div>
+            </div>
           <p id="stats-info"></p>
         </section>
       </div>
@@ -478,86 +489,105 @@
   </div>
 </div>
 
-      <!-- Modale Edition Historique (propre) -->
-      <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
-        <div class="modal-content" style="max-width:680px;">
-          <h3 style="margin-top:0;">Modifier la transaction</h3>
+<!-- Modale Edition Historique (avec choix de catégorie) -->
+  <div id="modal-edit-transaction" class="modal-bg" style="display:none;">
+    <div class="modal-content" style="max-width:680px;">
+      <h3 style="margin-top:0;">Modifier la transaction</h3>
 
-          <form id="edit-transaction-form" novalidate>
-            <input type="hidden" id="edit-id" />
+      <form id="edit-transaction-form" novalidate>
+        <input type="hidden" id="edit-id" />
 
-            <div class="form-row">
-              <label for="edit-description">Description :</label>
-              <input type="text" id="edit-description" required />
-            </div>
-
-            <div class="form-row">
-              <label for="edit-amount">Montant (€) :</label>
-              <input type="number" id="edit-amount" step="0.01" required />
-            </div>
-
-            <div class="form-row">
-              <label for="edit-date">Date :</label>
-              <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required />
-            </div>
-
-            <div class="form-row">
-              <label for="edit-type">Type :</label>
-            <!-- Catégorie (picker V2) -->
-            <div class="form-row">
-              <label for="edit-category">Catégorie :</label>
-              <div class="category-picker-v2">
-                <input type="hidden" id="edit-category" name="category" required>
-                <button
-                  type="button"
-                  class="cat-trigger"
-                  data-target-input="edit-category"
-                  data-target-preview="edit-selected-category"
-                  aria-haspopup="dialog"
-                  aria-controls="icon-sheet"
-                  title="Choisir une catégorie">
-                  <span id="edit-selected-category" class="cat-badge">
-                    <i class="fa-regular fa-circle-question"></i>
-                  </span>
-                  <span class="cat-current-label">Choisir</span>
-                </button>
-              </div>
-            </div>
-
-            <div class="form-row" id="edit-apply-previous-row" style="display:none;">
-              <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
-                <input type="checkbox" id="edit-apply-previous" />
-                Appliquer aux mois antérieurs
-              </label>
-            </div>
-
-            <div class="form-row" id="edit-installments-row" style="display:none;">
-              <label for="edit-installments">Nombre d’échéances :</label>
-              <input type="number" id="edit-installments" min="2" max="24" />
-            </div>
-
-            <hr style="margin:1em 0; border:none; border-top:1px solid #ddd;">
-
-            <div class="form-row">
-              <label for="edit-stats-period">Afficher les statistiques par :</label>
-              <select id="edit-stats-period">
-                <option value="day">Jour (aujourd’hui)</option>
-                <option value="month" selected>Mois</option>
-                <option value="year">Année</option>
-              </select>
-            </div>
-
-            <div style="margin-top:1em;display:flex;gap:.6em;justify-content:flex-end;flex-wrap:wrap;">
-              <button type="button" id="edit-delete-btn" style="background:#d32f2f;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Supprimer la transaction</button>
-              <span style="flex:1 1 auto;"></span>
-              <button type="button" id="edit-cancel-btn" style="background:#777;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Annuler</button>
-              <button type="submit" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Enregistrer</button>
-            </div>
-          </form>
+        <div class="form-row">
+          <label for="edit-description">Description :</label>
+          <input type="text" id="edit-description" required />
         </div>
-      </div>
 
+        <div class="form-row">
+          <label for="edit-amount">Montant (€) :</label>
+          <input type="number" id="edit-amount" step="0.01" required />
+        </div>
+
+        <div class="form-row">
+          <label for="edit-date">Date :</label>
+          <input type="text" id="edit-date" class="date-input" placeholder="jj-mm-aaaa" required />
+        </div>
+
+        <div class="form-row">
+          <label for="edit-type">Type :</label>
+          <select id="edit-type" required>
+            <option value="expense">Dépense</option>
+            <option value="income">Revenu</option>
+          </select>
+        </div>
+
+        <!-- ✅ Catégorie : bouton "Choisir" + aperçu icône -->
+        <div class="form-row">
+          <label for="edit-category">Catégorie :</label>
+          <div class="category-picker-v2">
+            <input type="hidden" id="edit-category" name="category" required>
+            <button
+              type="button"
+              class="cat-trigger"
+              data-target-input="edit-category"
+              data-target-preview="edit-selected-category"
+              aria-haspopup="dialog"
+              aria-controls="icon-sheet"
+              title="Choisir une catégorie">
+              <span id="edit-selected-category" class="cat-badge">
+                <i class="fa-regular fa-circle-question"></i>
+              </span>
+              <span class="cat-current-label">Choisir</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="edit-recurrence">Récurrence :</label>
+          <select id="edit-recurrence">
+            <option value="none">Aucune</option>
+            <option value="monthly">Mensuelle</option>
+            <option value="yearly">Annuelle</option>
+            <option value="installments">Paiement en X fois</option>
+          </select>
+        </div>
+
+        <div class="form-row" id="edit-end-row" style="display:none;">
+          <label for="edit-until">Jusqu’à :</label>
+          <input type="text" id="edit-until" class="date-input" placeholder="jj-mm-aaaa" />
+        </div>
+
+        <div class="form-row" id="edit-installments-row" style="display:none;">
+          <label for="edit-installments">Nombre d’échéances :</label>
+          <input type="number" id="edit-installments" min="2" max="24" />
+        </div>
+
+        <div class="form-row" id="edit-apply-previous-row" style="display:none;">
+          <label style="display:flex;align-items:center;gap:0.6em;font-weight:normal;min-width:0;">
+            <input type="checkbox" id="edit-apply-previous" />
+            Appliquer aux mois antérieurs
+          </label>
+        </div>
+
+        <hr style="margin:1em 0; border:none; border-top:1px solid #ddd;">
+
+        <div class="form-row">
+          <label for="edit-stats-period">Afficher les statistiques par :</label>
+          <select id="edit-stats-period">
+            <option value="day">Jour (aujourd’hui)</option>
+            <option value="month" selected>Mois</option>
+            <option value="year">Année</option>
+          </select>
+        </div>
+
+        <div style="margin-top:1em;display:flex;gap:.6em;justify-content:flex-end;flex-wrap:wrap;">
+          <button type="button" id="edit-delete-btn" style="background:#d32f2f;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Supprimer la transaction</button>
+          <span style="flex:1 1 auto;"></span>
+          <button type="button" id="edit-cancel-btn" style="background:#777;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Annuler</button>
+          <button type="submit" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.5em 1em;cursor:pointer;">Enregistrer</button>
+        </div>
+      </form>
     </div>
+  </div>
 </div>
 
 <!-- === AJOUT : Modale Export PDF === -->

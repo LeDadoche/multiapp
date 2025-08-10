@@ -957,53 +957,149 @@ function renderCategoryIconInline(cat) {
   return `<span class="material-icons" aria-hidden="true">${val}</span>`;
 }
 
-// ====== LISTE / HISTORIQUE ======
+// ===============================
+//  Historique — rendu avec data-id + clic crayon câblé directement
+// ===============================
 function renderTransactionList() {
-  const list = document.getElementById('transactions-list');
-  if (!list) return;
-  list.innerHTML = '';
+  const ul = document.getElementById('transactions-list');
+  if (!ul) return;
 
-  // Affiche UNIQUEMENT les "bases" (pas d’expansion)
-  const sorted = [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date));
-
-  const badge = (tx) => {
-    if (!tx.recurrence || tx.recurrence === 'none') return '';
-    if (tx.recurrence === 'monthly') return '<span class="tx-badge" title="Mensuelle">Mensuelle</span>';
-    if (tx.recurrence === 'yearly')  return '<span class="tx-badge" title="Annuelle">Annuelle</span>';
-    if (tx.recurrence === 'installments') return `<span class="tx-badge" title="Échéances">Échéances${tx.installments?` ×${tx.installments}`:''}</span>`;
-    return '';
-  };
-
-  for (const tx of sorted) {
-    const li = document.createElement('li');
-    li.innerHTML = `
-    <span style="display:flex; align-items:center; gap:.4em;">
-    ${renderCategoryIconInline(tx.category)}
-    <span>${tx.description}</span>
-    ${badge(tx)}
-    </span>
-    <span>${new Date(tx.date).toLocaleDateString('fr-FR')}</span>
-    <span style="display:flex; gap:.4em;">
-    <button class="edit-btn"  title="Modifier"  aria-label="Modifier">✏️</button>
-    <button class="remove-btn" title="Supprimer" aria-label="Supprimer">🗑️</button>
-    </span>
-    `;
-
-    li.querySelector('.edit-btn').addEventListener('click', () => openEditModal(tx));
-    li.querySelector('.remove-btn').addEventListener('click', () => {
-      if (confirm(`Supprimer "${tx.description}" (série entière) ?`)) {
-        transactions = transactions.filter(t => t.id !== tx.id);
-        saveTransactionsLocal();
-        if (isDropboxConnected()) saveTransactionsDropbox();
-        updateViews();
-      }
-    });
-
-    // Double‑clic = éditer
-    li.addEventListener('dblclick', () => openEditModal(tx));
-
-    list.appendChild(li);
+  // ---- Où trouver les transactions ?
+  function getTxs() {
+    try { if (Array.isArray(window.transactions) && window.transactions.length) return window.transactions; } catch(_) {}
+    try { if (Array.isArray(window.allTransactions) && window.allTransactions.length) return window.allTransactions; } catch(_) {}
+    try { if (Array.isArray(window.txs) && window.txs.length) return window.txs; } catch(_) {}
+    // localStorage (plusieurs clés possibles)
+    const keys = ['transactions','finance_transactions','finances:transactions','txs','data_transactions'];
+    for (const k of keys) {
+      try {
+        const raw = localStorage.getItem(k);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length) return parsed;
+        if (parsed && Array.isArray(parsed.items) && parsed.items.length) return parsed.items;
+      } catch(_) {}
+    }
+    return [];
   }
+
+  const txs = getTxs().slice();
+
+  // ---- Helpers
+  const fmtDate = (d) => {
+    const dd = new Date(d);
+    return isNaN(dd) ? String(d) : dd.toLocaleDateString('fr-FR');
+  };
+  const sign = (t, v) => (t === 'income' ? '+' : t === 'expense' ? '−' : (Number(v) >= 0 ? '+' : '−'));
+  const num  = (v) => Math.abs(Number(v || 0)).toFixed(2);
+  const iconHtml = (cat) => (/fa-/.test(String(cat||'')) ? `<i class="${cat}" aria-hidden="true"></i>` : '');
+
+  // ---- Tri (récent -> ancien)
+  txs.sort((a, b) => {
+    const ta = Date.parse(a?.date || a?.day || 0) || 0;
+    const tb = Date.parse(b?.date || b?.day || 0) || 0;
+    return tb - ta;
+  });
+
+  // ---- Rendu
+  ul.innerHTML = '';
+
+  if (!txs.length) {
+    const li = document.createElement('li');
+    li.style.opacity = '.75';
+    li.textContent = 'Aucune transaction trouvée.';
+    ul.appendChild(li);
+    return;
+  }
+
+  txs.forEach((tx, idx) => {
+    const id = String(tx.id || tx._id || tx.uuid || `${(tx.date || 'unk')}-${idx}`);
+
+    const li = document.createElement('li');
+    li.dataset.id = id;
+    li.id = `tx-${id}`;
+
+    // Colonne gauche: icône + description
+    const left = document.createElement('span');
+    left.style.display = 'inline-flex';
+    left.style.alignItems = 'center';
+    left.style.gap = '.4rem';
+    left.innerHTML = `${iconHtml(tx.category)} ${tx.description || tx.label || ''}`;
+
+    // Colonne droite: date + montant
+    const right = document.createElement('span');
+    right.style.marginLeft = 'auto';
+    right.innerHTML = `${fmtDate(tx.date || tx.day)} — <strong>${sign(tx.type, tx.amount)}${num(tx.amount)}€</strong>`;
+
+    // Bouton Éditer (clic direct -> openEditModal)
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.title = 'Modifier';
+    editBtn.className = 'edit-btn';
+    editBtn.setAttribute('data-action', 'edit');
+    editBtn.setAttribute('data-id', id);
+    editBtn.style.background = 'none';
+    editBtn.style.border = 'none';
+    editBtn.style.cursor = 'pointer';
+    editBtn.innerHTML = `<i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>`;
+    editBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const fn = (typeof window.openEditModal === 'function') ? window.openEditModal
+      : (typeof openEditModal === 'function') ? openEditModal
+      : null;
+      if (!fn) { console.warn('openEditModal indisponible'); return; }
+      fn(id);
+    }, false);
+
+    // Bouton Supprimer (simple)
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.title = 'Supprimer';
+    delBtn.className = 'remove-btn';
+    delBtn.setAttribute('data-action', 'delete');
+    delBtn.setAttribute('data-id', id);
+    delBtn.style.background = 'none';
+    delBtn.style.border = 'none';
+    delBtn.style.cursor = 'pointer';
+    delBtn.style.color = '#d32f2f';
+    delBtn.innerHTML = `<i class="fa-solid fa-trash" aria-hidden="true"></i>`;
+    delBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm('Supprimer cette transaction ?')) return;
+
+      // Essaie de supprimer dans la source globale
+      try {
+        if (Array.isArray(window.transactions)) {
+          const i = window.transactions.findIndex(t => String(t.id || t._id || t.uuid) === String(id));
+          if (i >= 0) window.transactions.splice(i, 1);
+          localStorage.setItem('transactions', JSON.stringify(window.transactions));
+        } else {
+          // fallback localStorage
+          const s = localStorage.getItem('transactions');
+          if (s) {
+            const arr = JSON.parse(s);
+            const j = arr.findIndex(t => String(t.id || t._id || t.uuid) === String(id));
+            if (j >= 0) {
+              arr.splice(j, 1);
+              localStorage.setItem('transactions', JSON.stringify(arr));
+            }
+          }
+        }
+      } catch(_) {}
+
+      renderTransactionList();
+      document.dispatchEvent(new Event('transactions:changed'));
+    }, false);
+
+    // Assemblage
+    li.appendChild(left);
+    li.appendChild(right);
+    li.appendChild(editBtn);
+    li.appendChild(delBtn);
+    ul.appendChild(li);
+  });
 }
 
 // Période des stats (synchro avec les <select> HTML)
@@ -1071,8 +1167,6 @@ function renderStats() {
   info.textContent = `Total dépenses (${label}) : ${total.toFixed(2)} €`;
 }
 
-
-// ====== Récapitulatif du mois (liste + tri + regroupement) ======
 function renderMonthSummary() {
   const list = document.getElementById('month-tx-list');
   if (!list) return;
@@ -1080,43 +1174,79 @@ function renderMonthSummary() {
   const sortIcon = document.getElementById('month-sort-icon');
   const groupCheckbox = document.getElementById('group-by-category');
 
+  // Libellé humain depuis une classe fa-...
+  function humanLabel(raw){
+    if (!raw) return 'Divers';
+    const s = String(raw).trim();
+    const allFa = s.match(/fa-[a-z0-9-]+/gi) || [];
+    const variants = new Set(['fa-solid','fa-regular','fa-light','fa-thin','fa-duotone','fa-brands']);
+    const lastFa = allFa.reverse().find(k => !variants.has(k.toLowerCase())) || s;
+
+    const MAP = {
+      // Transport
+      'fa-bus':'Transport','fa-bus-simple':'Transport','fa-train':'Transport',
+      'fa-car':'Auto','fa-gas-pump':'Carburant',
+      // Vie courante
+      'fa-cart-shopping':'Courses','fa-basket-shopping':'Courses',
+      'fa-utensils':'Restauration',
+      // Finance
+      'fa-briefcase':'Salaire','fa-money-bill':'Salaire','fa-sack-dollar':'Revenu','fa-coins':'Revenu'
+    };
+    if (MAP[lastFa]) return MAP[lastFa];
+    const simple = lastFa.replace(/^fa-/, '').replace(/-/g, ' ');
+    return simple.charAt(0).toUpperCase() + simple.slice(1);
+  }
+
+  // Période = mois courant
   const y = currentMonth.getFullYear();
   const m0 = currentMonth.getMonth();
   const startIso = formatDate(new Date(y, m0, 1));
   const endIso   = formatDate(new Date(y, m0 + 1, 0));
   const filtered = expandTransactionsBetween(startIso, endIso);
 
+  // Tri
   const sorted = [...filtered].sort((a, b) => {
-    if (monthSortMode === 'date-asc') return new Date(a.date) - new Date(b.date);
-    if (monthSortMode === 'date-desc') return new Date(b.date) - new Date(a.date);
+    if (monthSortMode === 'date-asc')   return new Date(a.date) - new Date(b.date);
+    if (monthSortMode === 'date-desc')  return new Date(b.date) - new Date(a.date);
     if (monthSortMode === 'amount-asc') return Number(a.amount) - Number(b.amount);
-    if (monthSortMode === 'amount-desc') return Number(b.amount) - Number(a.amount);
-    return 0;
+    if (monthSortMode === 'amount-desc')return Number(b.amount) - Number(a.amount);
+    return new Date(a.date) - new Date(b.date);
   });
 
+  // (optionnel) Icône de tri
   if (sortIcon) {
-    sortIcon.className = {
-      'date-asc':  'fa-solid fa-calendar-day',
-      'date-desc': 'fa-solid fa-calendar-days',
-      'amount-asc':'fa-solid fa-arrow-down-1-9',
-      'amount-desc':'fa-solid fa-arrow-down-9-1'
-    }[monthSortMode] || 'fa-solid fa-calendar-day';
+    sortIcon.className = ({
+      'date-asc':   'fa-solid fa-arrow-up-1-9',
+      'date-desc':  'fa-solid fa-arrow-down-9-1',
+      'amount-asc': 'fa-solid fa-arrow-down-1-9',
+      'amount-desc':'fa-solid fa-arrow-up-9-1'
+    })[monthSortMode] || 'fa-solid fa-calendar-day';
   }
 
   list.innerHTML = '';
 
   if (groupCheckbox && groupCheckbox.checked) {
+    // Regrouper par catégorie
     const groups = {};
     for (const tx of sorted) {
       const k = tx.category || DEFAULT_CATEGORY;
       (groups[k] = groups[k] || []).push(tx);
     }
+
+    // Rendu des groupes
     Object.keys(groups).forEach(cat => {
+      const items = groups[cat];
+      const sum = items.reduce((s,t)=> s + Number(t.amount || 0), 0);
+      const label = humanLabel(cat);
+
+      // Header = icône + libellé + total + " · N tx"
       const header = document.createElement('li');
       header.style.fontWeight = '700';
       header.style.display = 'flex';
       header.style.alignItems = 'center';
-      header.innerHTML = `${renderCategoryIconInline(cat)}&nbsp;${cat} — ${groups[cat].reduce((s,t)=>s+Number(t.amount),0).toFixed(2)}€`;
+      header.innerHTML = `${renderCategoryIconInline(cat)}&nbsp;${label} — ${sum.toFixed(2)}€ · ${items.length} tx`;
+
+      // Bouton (▾)
       const toggleBtn = document.createElement('button');
       toggleBtn.textContent = '▾';
       toggleBtn.style.marginLeft = 'auto';
@@ -1126,16 +1256,20 @@ function renderMonthSummary() {
       header.appendChild(toggleBtn);
       list.appendChild(header);
 
+      // Lignes du groupe (ul imbriqué)
       const ul = document.createElement('ul');
       ul.style.listStyle = 'none';
       ul.style.paddingLeft = '1em';
-      groups[cat].forEach(tx => {
+
+      items.forEach(tx => {
         const li = document.createElement('li');
-        li.innerHTML = `${new Date(tx.date).toLocaleDateString('fr-FR')} — ${tx.description} — <strong>${tx.type === 'income' ? '+' : '-'}${Number(tx.amount).toFixed(2)}€</strong>`;
+        const sign = tx.type === 'income' ? '+' : '−';
+        li.innerHTML = `${new Date(tx.date).toLocaleDateString('fr-FR')} — ${tx.description} — <strong>${sign}${Number(tx.amount).toFixed(2)}€</strong>`;
         ul.appendChild(li);
       });
       list.appendChild(ul);
 
+      // Ouvrir/fermer
       let open = true;
       toggleBtn.addEventListener('click', () => {
         open = !open;
@@ -1143,12 +1277,15 @@ function renderMonthSummary() {
         toggleBtn.textContent = open ? '▾' : '▸';
       });
     });
+
   } else {
+    // Liste simple
     for (const tx of sorted) {
       const li = document.createElement('li');
+      const sign = tx.type === 'income' ? '+' : '−';
       li.innerHTML = `
       <span>${renderCategoryIconInline(tx.category)} ${tx.description}</span>
-      <span>${new Date(tx.date).toLocaleDateString('fr-FR')} — <strong>${tx.type === 'income' ? '+' : '-'}${Number(tx.amount).toFixed(2)}€</strong></span>
+      <span>${new Date(tx.date).toLocaleDateString('fr-FR')} — <strong>${sign}${Number(tx.amount).toFixed(2)}€</strong></span>
       `;
       list.appendChild(li);
     }
@@ -2559,16 +2696,23 @@ document.addEventListener('click', function(e){
 }, true); // <-- "true" = priorité maximale
 
 // ===============================
-//  EXPORT PDF — UI + Génération
+//  EXPORT PDF — UI + Génération (aperçu + compression JPEG + bon nom)
 // ===============================
 (function setupPdfExport() {
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
 
+  // Mise en page PDF
+  const LAYOUT = { MARGIN: 12, HEADER_H: 10, FOOTER_H: 8, GAP: 6 };
+
+  // Réglages poids/qualité
+  const JPEG_QUALITY = 0.72;              // 0.6–0.8 = bon compromis
+  const CAPTURE_SCALE = Math.min(1.4, Math.max(1.0, window.devicePixelRatio || 1)); // moins “zoomé” = plus léger
+
   // Boutons & modale
-  const btnOpen  = $('#export-pdf');
-  const modal    = $('#export-pdf-modal');
-  const btnRun   = $('#export-pdf-run');
-  const btnCancel= $('#export-pdf-cancel');
+  const btnOpen   = $('#export-pdf');
+  const modal     = $('#export-pdf-modal');
+  const btnRun    = $('#export-pdf-run');
+  const btnCancel = $('#export-pdf-cancel');
 
   const cbCalendar = $('#exp-calendar');
   const cbMonth    = $('#exp-month');
@@ -2586,135 +2730,1395 @@ document.addEventListener('click', function(e){
     }
   } catch(e){}
 
-  function openModal() {
-    if (!modal) return;
-    modal.style.display = 'block';
-  }
-  function closeModal() {
-    if (!modal) return;
-    modal.style.display = 'none';
+  function openModal(){ modal && (modal.style.display = 'block'); }
+  function closeModal(){ modal && (modal.style.display = 'none'); }
+
+  modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal?.style.display === 'block') closeModal(); });
+  btnOpen?.addEventListener('click', openModal);
+  btnCancel?.addEventListener('click', closeModal);
+
+  // ---- Helpers capture PDF ----
+  async function ensureVisibleForCapture(el) {
+    const touched = [];
+    let node = el;
+    while (node && node !== document.body) {
+      const cs = window.getComputedStyle(node);
+      if (cs && cs.display === 'none') {
+        touched.push({ node, old: node.style.display });
+        node.style.display = 'block';
+      }
+      node = node.parentElement;
+    }
+    return () => { touched.forEach(({ node, old }) => node.style.display = old); };
   }
 
-  // Fermer sur fond & Escape
-  modal?.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
+  // conversion mm -> pixels pour préparer une image à la "bonne" largeur
+  const mmToPx = (mm) => Math.round((mm / 25.4) * 130); // ~130 dpi: net et léger
+
+  async function captureSelectorToPdf(pdf, title, selector) {
+    const el = document.querySelector(selector);
+    if (!el) return;
+
+    const restore = await ensureVisibleForCapture(el);
+    try {
+      const { MARGIN, HEADER_H, FOOTER_H, GAP } = LAYOUT;
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+
+      // Point de départ sûr sous l'en-tête
+      let y = pdf.__cursorY ?? (MARGIN + HEADER_H + 4);
+
+      // Titre de section
+      if (title) {
+        pdf.setFontSize(16);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text(title, MARGIN, y);
+        y += GAP;
+      }
+
+      // 1) Capture DOM -> canvas (échelle modérée)
+      const canvas = await html2canvas(el, {
+        backgroundColor: null,
+        scale: CAPTURE_SCALE
+      });
+
+      // 2) Downscale vers la largeur utile du PDF (en px), puis export JPEG compressé
+      const targetWmm = pageW - 2*MARGIN;
+      const targetWpx = Math.min(canvas.width, mmToPx(targetWmm));
+      const targetHpx = Math.round(canvas.height * (targetWpx / canvas.width));
+
+      const tmp = document.createElement('canvas');
+      tmp.width = targetWpx;
+      tmp.height = targetHpx;
+      const ctx = tmp.getContext('2d');
+      ctx.drawImage(canvas, 0, 0, targetWpx, targetHpx);
+
+      const imgData = tmp.toDataURL('image/jpeg', JPEG_QUALITY); // <<< JPEG compressé
+
+      // 3) Placement dans la page
+      const targetHmm = targetWmm;
+      const targetHmmH = (targetHpx / targetWpx) * targetHmm; // conserve ratio en mm
+      const remaining = pageH - y - MARGIN - FOOTER_H;
+
+      if (targetHmmH > remaining) {
+        pdf.addPage();
+        y = MARGIN + HEADER_H + 4;
+      }
+
+      pdf.addImage(imgData, 'JPEG', MARGIN, y, targetHmm, targetHmmH);
+      pdf.__cursorY = y + targetHmmH + GAP;
+
+      if (pdf.__cursorY > pageH - MARGIN - FOOTER_H) {
+        pdf.addPage();
+        pdf.__cursorY = MARGIN + HEADER_H + 4;
+      }
+    } finally {
+      restore();
+    }
+  }
+
+  // En-tête / pied de page
+  function addHeaderFooter(pdf, titleText) {
+    const { MARGIN, HEADER_H, FOOTER_H } = LAYOUT;
+    const pageCount = pdf.getNumberOfPages();
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+
+    for (let i = 1; i <= pageCount; i++) {
+      pdf.setPage(i);
+
+      // Header
+      pdf.setFontSize(11);
+      pdf.setTextColor(80);
+      const dateStr = new Date().toLocaleString('fr-FR');
+      pdf.text(titleText, MARGIN, MARGIN);
+      const wDate = pdf.getTextWidth(dateStr);
+      pdf.text(dateStr, pageW - MARGIN - wDate, MARGIN);
+
+      // Trait sous l'en-tête
+      pdf.setDrawColor(200);
+      pdf.line(MARGIN, MARGIN + HEADER_H - 4, pageW - MARGIN, MARGIN + HEADER_H - 4);
+
+      // Footer
+      const footer = `Page ${i}/${pageCount}`;
+      const wFooter = pdf.getTextWidth(footer);
+      pdf.text(footer, pageW - MARGIN - wFooter, pageH - (FOOTER_H/2));
+    }
+  }
+
+  // --- Aperçu avec BON NOM : onglet HTML + bouton Télécharger (download=filename)
+  function previewPdf(pdf, filename) {
+    // sécurité nom
+    filename = (filename || 'finances.pdf').trim();
+    if (!/\.pdf$/i.test(filename)) filename += '.pdf';
+    filename = filename.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_');
+
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+
+    // Ouvre une page viewer simple (iframe + barre d’actions)
+    const w = window.open('', '_blank');
+    if (!w) {
+      // Popups bloquées → on propose le téléchargement direct
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a);
+      a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return;
+    }
+
+    const html = `<!doctype html>
+    <html lang="fr">
+    <head>
+    <meta charset="utf-8">
+    <title>${filename}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+    body{margin:0;background:#111;color:#ddd;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;}
+    header{position:sticky;top:0;display:flex;gap:.5rem;align-items:center;padding:.6rem .8rem;background:#181818;border-bottom:1px solid #333;}
+    header .spacer{flex:1}
+    header .name{font-weight:700}
+    header a, header button{
+      appearance:none;border:1px solid #2c2c2c;background:#2a2a2a;color:#eee;border-radius:8px;
+      padding:.45rem .8rem;cursor:pointer;font-weight:700;text-decoration:none;
+    }
+    header a:hover, header button:hover{background:#333}
+    iframe{width:100%;height:calc(100vh - 52px);border:0;background:#222}
+    </style>
+    </head>
+    <body>
+    <header>
+    <span class="name">${filename}</span>
+    <span class="spacer"></span>
+    <button id="printBtn">Imprimer</button>
+    <a id="dl" href="${url}" download="${filename}">Télécharger</a>
+    </header>
+    <iframe id="frame" src="${url}" title="${filename}"></iframe>
+    <script>
+    const url = '${url}';
+    document.getElementById('printBtn').addEventListener('click', () => {
+      document.getElementById('frame').contentWindow?.print?.();
+    });
+    window.addEventListener('unload', () => { try{ URL.revokeObjectURL(url); }catch(e){} });
+    </script>
+    </body>
+    </html>`;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  async function runExport() {
+    const wantCalendar = cbCalendar?.checked;
+    const wantMonth    = cbMonth?.checked;
+    const wantStats    = cbStats?.checked;
+    const wantHistory  = cbHistory?.checked;
+
+    if (!wantCalendar && !wantMonth && !wantStats && !wantHistory) {
+      alert('Sélectionne au moins un élément à exporter.');
+      return;
+    }
+
+    // UI lock
+    const oldText = btnRun.innerHTML;
+    btnRun.disabled = true;
+    btnRun.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Génération…';
+
+    try {
+      const { jsPDF } = window.jspdf || {};
+      if (!jsPDF || !window.html2canvas) {
+        alert('Librairies PDF manquantes. Vérifie les balises <script> html2canvas et jsPDF.');
+        return;
+      }
+
+      // Prépare le nom de fichier choisi
+      let fileName = (fileInput?.value || 'finances.pdf').trim();
+      if (!/\.pdf$/i.test(fileName)) fileName += '.pdf';
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      pdf.__cursorY = LAYOUT.MARGIN + LAYOUT.HEADER_H + 4;
+
+      // Ordre logique
+      if (wantCalendar) await captureSelectorToPdf(pdf, 'Calendrier', '#calendar-section');
+      if (wantMonth)    await captureSelectorToPdf(pdf, 'Récapitulatif du mois', '#month-summary');
+      if (wantStats)    await captureSelectorToPdf(pdf, 'Statistiques', '#stats-section');
+      if (wantHistory)  await captureSelectorToPdf(pdf, 'Historique', '#transactions-section');
+
+      addHeaderFooter(pdf, 'Finances — Export');
+
+      // 👉 Aperçu avec bouton "Télécharger" (download=filename)
+      previewPdf(pdf, fileName);
+
+      closeModal();
+    } catch (err) {
+      console.error('Erreur export PDF:', err);
+      alert('Échec de la génération du PDF. Regarde la console pour les détails.');
+    } finally {
+      btnRun.disabled = false;
+      btnRun.innerHTML = oldText;
+    }
+  }
+
+  btnRun?.addEventListener('click', runExport);
+})();
+
+// ===============================
+//  TOTAL DU MOIS — Revenus / Dépenses / Solde [MODULE FIX v3: classification robuste]
+// ===============================
+(function setupMonthTotal() {
+  const $ = (s, ctx = document) => ctx.querySelector(s);
+
+  // Accès données (module d'abord, puis window en secours)
+  const getTransactions = () => {
+    try { if (Array.isArray(transactions)) return transactions; } catch(_) {}
+    try { if (Array.isArray(window.transactions)) return window.transactions; } catch(_) {}
+    return [];
+  };
+  const getCurrentMonth = () => {
+    try { if (currentMonth instanceof Date && !isNaN(currentMonth)) return currentMonth; } catch(_) {}
+    try { if (window.currentMonth instanceof Date && !isNaN(window.currentMonth)) return window.currentMonth; } catch(_) {}
+    return new Date();
+  };
+
+  // Helpers
+  function euros(n){ return Number(n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'}); }
+  function parseAppDate(raw){
+    if(!raw) return null;
+    if(raw instanceof Date && !isNaN(raw)) return raw;
+    if(typeof raw==='number') return new Date(raw);
+    const s=String(raw).trim();
+    let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return new Date(+m[1],+m[2]-1,+m[3]); // YYYY-MM-DD
+    m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);   if(m) return new Date(+m[3],+m[2]-1,+m[1]); // JJ/MM/AAAA
+    const d=new Date(s); return isNaN(d)?null:d;
+  }
+  function parseAmount(v){
+    if(typeof v==='number') return v;
+    if(v==null) return 0;
+    let t=String(v)
+    .replace(/[€\s\u00A0]/g,'')
+    .replace(/[−—–]/g,'-') // tirets typographiques -> '-'
+    .replace(/,/g,'.')
+    .replace(/\.(?=.*\.)/g,'') // retire les points de milliers
+    .replace(/[^0-9.\-]/g,''); // garde chiffres/point/signe
+    const n=parseFloat(t);
+    return isNaN(n)?0:n;
+  }
+  const sameMonth=(d,ref)=> d.getFullYear()===ref.getFullYear() && d.getMonth()===ref.getMonth();
+
+  // Détermine si une transaction est une dépense (même si le montant est positif)
+  function isExpenseTx(tx, val){
+    // 1) Booléen explicite
+    if (typeof tx?.isExpense === 'boolean') return tx.isExpense;
+
+    // 2) Propriétés textuelles usuelles
+    const fields = [
+      tx?.type, tx?.kind, tx?.nature, tx?.flow, tx?.sens,
+      tx?.categoryType, tx?.catType
+    ].filter(Boolean).map(x=>String(x).toLowerCase());
+
+    const isExpenseByText = fields.some(s =>
+    /(expense|d[ée]pense|out|sortie|d[ée]bit)/.test(s)
+    );
+    const isIncomeByText  = fields.some(s =>
+    /(income|revenu|entr[ée]e|cr[ée]dit)/.test(s)
+    );
+    if (isExpenseByText) return true;
+    if (isIncomeByText)  return false;
+
+    // 3) Catégorie “indicative” (optionnel, améliore la détection)
+    const cat = String(tx?.category || tx?.categorie || '').toLowerCase();
+    if (/(salaire|paie|pay|prime|remboursement|dividende|loyer perçu)/.test(cat)) return false;
+    if (/(courses|essence|resto|facture|loyer|abonnement|transport|sant[ée]|imp[oô]ts)/.test(cat)) return true;
+
+    // 4) Signe du montant si présent
+    if (typeof val === 'number' && val !== 0) return val < 0;
+
+    // 5) Signe textuel au début (ex: "−45,00")
+    const raw = String(tx.amount ?? tx.montant ?? tx.value ?? tx.prix ?? tx.price ?? '').trim();
+    if (/^[−—–-]/.test(raw)) return true;
+
+    // Par défaut: on considère “revenu”
+    return false;
+  }
+
+  // Calculs
+  function computeBreakdown(){
+    const txs=getTransactions();
+    const ref=getCurrentMonth();
+    let income=0, expense=0;
+    for(const tx of txs){
+      const d=parseAppDate(tx.date ?? tx.day ?? tx.createdAt ?? tx.timestamp);
+      if(!d || !sameMonth(d,ref)) continue;
+
+      const valSigned=parseAmount(tx.amount ?? tx.montant ?? tx.value ?? tx.prix ?? tx.price);
+      const isExp=isExpenseTx(tx, valSigned);
+      const mag=Math.abs(valSigned || 0);
+
+      if (isExp) expense -= mag;     // on impose un signe négatif aux dépenses
+      else       income  += mag;     // revenus toujours positifs
+    }
+    const net = income + expense;
+    return { income, expense, net };
+  }
+
+  // UI
+  function ensureContainer(){
+    const host=$('#month-summary'); if(!host) return null;
+    let box=host.querySelector('#month-total-box');
+    if(!box){
+      const h2=host.querySelector('h2') || host.firstElementChild;
+      box=document.createElement('div');
+      box.id='month-total-box';
+      box.className='month-total';
+      box.innerHTML = [
+        '<div class="kpi kpi--income"><span class="label">Revenus</span><span id="month-income" class="amount">0,00 €</span></div>',
+        '<div class="kpi kpi--expense"><span class="label">Dépenses</span><span id="month-expense" class="amount">0,00 €</span></div>',
+        '<div class="kpi kpi--net"><span class="label">Solde</span><span id="month-net" class="amount">0,00 €</span></div>'
+      ].join('');
+      if (h2 && h2.nextSibling) h2.parentNode.insertBefore(box, h2.nextSibling);
+      else host.prepend(box);
+    }
+    return box;
+  }
+
+  function updateMonthTotal(){
+    const box=ensureContainer(); if(!box) return;
+    const { income, expense, net } = computeBreakdown();
+    box.querySelector('#month-income').textContent = euros(income);
+    box.querySelector('#month-expense').textContent= euros(expense); // affiché en négatif
+    box.querySelector('#month-net').textContent    = euros(net);
+    const netEl = box.querySelector('#month-net');
+    netEl.classList.toggle('negative', net < 0);
+    netEl.classList.toggle('positive', net > 0);
+  }
+
+  // Expose
+  window.updateMonthTotal = updateMonthTotal;
+
+  // Initial
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', updateMonthTotal);
+  else updateMonthTotal();
+
+  // Recalcul si DOM du récap change
+  const host=$('#month-summary');
+  if(host && window.MutationObserver){
+    let t=null;
+    const mo=new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(updateMonthTotal,100); });
+    mo.observe(host,{childList:true,subtree:true,characterData:true});
+  }
+
+  // Recalcul sur navigation de mois (si présents)
+  ['#prev-month','#next-month','#today-btn'].forEach(sel=>{
+    const btn=document.querySelector(sel);
+    if(btn) btn.addEventListener('click', ()=> setTimeout(updateMonthTotal,0));
   });
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal?.style.display === 'block') closeModal();
+
+    // Events personnalisés éventuels
+    document.addEventListener('transactions:changed', updateMonthTotal);
+    document.addEventListener('month:changed', updateMonthTotal);
+})();
+
+// ===============================
+//  Regroupement par catégorie — noms lisibles (mode texte robuste)
+// ===============================
+(function setupReadableCategoryNamesV2(){
+  // Dictionnaire icône/clé -> libellé humain
+  const CATEGORY_LABELS = {
+    // Transport
+    'fa-bus': 'Transport', 'fa-bus-simple': 'Transport', 'fa-train':'Transport',
+    'fa-car':'Auto', 'fa-taxi':'Transport', 'fa-motorcycle':'Transport',
+    'fa-gas-pump':'Carburant',
+
+    // Vie courante
+    'fa-cart-shopping':'Courses', 'fa-basket-shopping':'Courses',
+    'fa-utensils':'Restauration',
+    'fa-house':'Logement', 'fa-home':'Logement',
+    'fa-bolt':'Énergie', 'fa-lightbulb':'Électricité', 'fa-droplet':'Eau',
+    'fa-wifi':'Internet', 'fa-tv':'Abonnements',
+
+    // Finance / travail
+    'fa-briefcase':'Salaire', 'fa-money-bill':'Salaire', 'fa-sack-dollar':'Revenu', 'fa-coins':'Revenu',
+    'fa-piggy-bank':'Épargne',
+
+    // Santé / divers
+    'fa-heart-pulse':'Santé', 'fa-notes-medical':'Santé',
+    'fa-dog':'Animaux',
+    'fa-gift':'Cadeaux',
+    'fa-futbol':'Loisirs',
+    'fa-ticket':'Divertissement',
+  };
+
+  // Mots-clés fallback -> libellé
+  const TEXT_FALLBACKS = {
+    'bus':'Transport', 'transport':'Transport', 'train':'Transport', 'carburant':'Carburant',
+    'courses':'Courses', 'resto':'Restauration', 'restaurant':'Restauration',
+    'logement':'Logement', 'internet':'Internet', 'abonnement':'Abonnements',
+    'salaire':'Salaire', 'paie':'Salaire', 'revenu':'Revenu', 'épargne':'Épargne',
+    'santé':'Santé', 'animaux':'Animaux', 'cadeaux':'Cadeaux',
+    'loisirs':'Loisirs', 'divertissement':'Divertissement', 'auto':'Auto', 'voiture':'Auto'
+  };
+
+  const FA_VARIANTS = new Set(['fa-solid','fa-regular','fa-light','fa-thin','fa-duotone','fa-brands']);
+
+  function mapToLabel(raw){
+    if (!raw) return 'Divers';
+    const s = String(raw).trim();
+
+    // Récupère la DERNIÈRE clé fa-xxx (ex: "fa-solid fa-bus" -> "fa-bus")
+    const allFa = s.match(/fa-[a-z0-9-]+/gi) || [];
+    const lastFa = allFa.reverse().find(k => !FA_VARIANTS.has(k.toLowerCase()));
+
+    if (lastFa && CATEGORY_LABELS[lastFa]) return CATEGORY_LABELS[lastFa];
+
+    // Sinon, mots-clés simples
+    const low = s.toLowerCase();
+    for (const key in TEXT_FALLBACKS) {
+      if (low.includes(key)) return TEXT_FALLBACKS[key];
+    }
+
+    // Fallback lisible: "fa-briefcase" -> "Briefcase"
+    if (lastFa) {
+      const simple = lastFa.replace(/^fa-/, '').replace(/-/g,' ');
+      return simple.charAt(0).toUpperCase() + simple.slice(1);
+    }
+    // Dernier recours
+    const firstWord = low.split(/\s+/)[0].replace(/^fa-/, '').replace(/-/g,' ');
+    return firstWord ? firstWord.charAt(0).toUpperCase() + firstWord.slice(1) : 'Divers';
+  }
+
+  // Remplace les TEXT NODES contenant "fa-..." en gardant le suffixe (" — 45,00€  ▾")
+  function relabelTextNodes(){
+    const host = document.querySelector('#month-summary');
+    if (!host) return;
+
+    const sepRegex = /\s[—–-]\s/; // séparateur: " — " ou " - " ou " – "
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null, false);
+    const nodes = [];
+    while (walker.nextNode()) {
+      const t = walker.currentNode.nodeValue;
+      if (t && /fa-[a-z0-9-]+/i.test(t)) nodes.push(walker.currentNode);
+    }
+
+    nodes.forEach(node => {
+      const full = node.nodeValue;
+      let labelPart = full, suffix = '';
+      const m = full.match(sepRegex);
+      if (m) {
+        const idx = full.indexOf(m[0]);
+        labelPart = full.slice(0, idx);
+        suffix = full.slice(idx); // ex: " — 45,00€  ▾"
+      }
+      const newLabel = mapToLabel(labelPart);
+      if (newLabel && newLabel !== labelPart) {
+        node.nodeValue = newLabel + (suffix || '');
+      }
+    });
+  }
+
+  // Lance maintenant + observe les changements (quand tu coches/décoches "Regrouper par catégorie")
+  const host = document.querySelector('#month-summary');
+  if (!host) return;
+  relabelTextNodes();
+
+  if (window.MutationObserver) {
+    let t = null;
+    const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(relabelTextNodes, 50); });
+    mo.observe(host, { childList: true, subtree: true, characterData: true });
+  }
+
+  document.addEventListener('month-summary:grouping-changed', relabelTextNodes);
+})();
+
+// ===============================
+//  Calendrier — ESC pour quitter le mode "double-clic" / fermer l'ajout rapide
+// ===============================
+(function enableCalendarEscExit(){
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  function clearCalendarSelection(){
+    document.querySelectorAll('#calendar td.selected, #calendar td.is-adding')
+    .forEach(td => td.classList.remove('selected','is-adding'));
+  }
+
+  function closeQuickAddModal(){
+    const modal = $('#modal-add-transaction');
+    if (modal && getComputedStyle(modal).display !== 'none') {
+      modal.style.display = 'none';
+      const f = $('#add-transaction-form');
+      if (f) f.reset();
+      clearCalendarSelection();
+      return true;
+    }
+    return false;
+  }
+
+  // Hooks facultatifs si ton code les expose
+  function exitCustomDblMode(){
+    let done = false;
+    if (typeof window.exitCalendarDblMode === 'function') {
+      try { window.exitCalendarDblMode(); done = true; } catch(_) {}
+    }
+    if (document.body.classList.contains('calendar-dbl-active')) {
+      document.body.classList.remove('calendar-dbl-active');
+      done = true;
+    }
+    return done;
+  }
+
+  function handleEsc(e){
+    if (e.key !== 'Escape') return;
+
+    // 1) Si l’ajout rapide (ou autre modale liée au calendrier) est ouvert → on ferme
+    if (closeQuickAddModal()) return;
+
+    // 2) Sinon, on tente de sortir d’un éventuel “mode double-clic” custom
+    if (exitCustomDblMode()) return;
+
+    // 3) À défaut, on nettoie la sélection visuelle éventuelle
+    clearCalendarSelection();
+  }
+
+  // Capture au niveau fenêtre (en phase de capture pour passer avant certains handlers)
+  window.addEventListener('keydown', handleEsc, true);
+})();
+
+// ===============================
+//  EDIT — Patch béton (wiring direct + délégué global)
+// ===============================
+(() => {
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  // ---- Récup données (globales ou localStorage)
+  function getTxs(){
+    try { if (Array.isArray(window.transactions) && window.transactions.length) return window.transactions; } catch(_){}
+    try { if (Array.isArray(window.allTransactions) && window.allTransactions.length) return window.allTransactions; } catch(_){}
+    try { if (Array.isArray(window.txs) && window.txs.length) return window.txs; } catch(_){}
+    try {
+      const raw = localStorage.getItem('transactions');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return arr;
+        if (arr && Array.isArray(arr.items)) return arr.items;
+      }
+    } catch(_){}
+    return [];
+  }
+  function findTxById(id){
+    const list = getTxs();
+    return list.find(t => String(t.id||t._id||t.uuid) === String(id));
+  }
+  const toInputDate = (raw) => {
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (isNaN(d)) return String(raw);
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const yy = d.getFullYear();
+    return `${dd}-${mm}-${yy}`;
+  };
+
+  // ---- Ouvre + remplit la modale (tolérant)
+  function openEditModal(id){
+    if (!id) { console.warn('[edit] id manquant'); return; }
+    const tx = findTxById(id);
+    if (!tx) { console.warn('[edit] transaction introuvable pour id=', id); return; }
+
+    // Champs
+    const setVal = (sel, val) => { const el = $(sel); if (el) el.value = val ?? ''; };
+    const setChk = (sel, val) => { const el = $(sel); if (el) el.checked = !!val; };
+
+    setVal('#edit-id', String(id));
+    setVal('#edit-description', tx.description ?? tx.label ?? '');
+    setVal('#edit-amount', Math.abs(Number(tx.amount ?? 0)).toFixed(2));
+    setVal('#edit-date', toInputDate(tx.date ?? tx.day ?? tx.createdAt));
+    {
+      const t = String(tx.type||'').toLowerCase();
+      const v = Number(tx.amount||0);
+      setVal('#edit-type', t==='income' ? 'income' : t==='expense' ? 'expense' : (v>=0 ? 'income' : 'expense'));
+    }
+    setVal('#edit-category', tx.category ?? tx.categorie ?? '');
+
+    const rec = String(tx.recurrence || 'none');
+    setVal('#edit-recurrence', ['none','monthly','yearly','installments'].includes(rec) ? rec : 'none');
+    setVal('#edit-until', toInputDate(tx.until ?? tx.recurrenceEnd ?? tx.end));
+    setVal('#edit-installments', tx.installments ?? '');
+    setChk('#edit-apply-previous', !!(tx.applyPrev || tx.applyPrevious));
+
+    // Affiche/cache lignes dépendantes
+    (function toggleRecRows(){
+      const v = $('#edit-recurrence')?.value || 'none';
+      const show = (sel, on) => { const r = $(sel); if (r) r.style.display = on ? '' : 'none'; };
+      show('#edit-end-row', ['monthly','yearly','installments'].includes(v));
+      show('#edit-installments-row', v === 'installments');
+      show('#edit-apply-previous-row', v === 'monthly');
+    })();
+
+    // Ouvre + focus
+    const modal = $('#modal-edit-transaction');
+    if (!modal) { console.error('[edit] #modal-edit-transaction introuvable'); return; }
+    modal.style.display = 'block';
+    setTimeout(() => { $('#edit-description')?.focus(); }, 0);
+
+    console.debug('[edit] modal ouverte pour id=', id, tx);
+  }
+
+  // Expose global
+  window.openEditModal = openEditModal;
+
+  // ---- Wiring DIRECT sur chaque bouton crayon
+  function wireEditButtons(){
+    const btns = document.querySelectorAll('button[data-action="edit"].edit-btn, li[data-id] button[data-action="edit"]');
+    let count = 0;
+    btns.forEach(btn => {
+      if (btn.dataset._wired === '1') return;
+      btn.dataset._wired = '1';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        let id = btn.dataset.id || btn.getAttribute('data-id');
+        if (!id) {
+          const li = btn.closest('li[data-id],[id^="tx-"]');
+          if (li) id = li.dataset.id || (li.id.match(/^tx-(.+)$/)||[])[1];
+        }
+        if (!id) return console.warn('[edit] pas d’id sur le bouton/LI');
+        openEditModal(id);
+      }, false);
+      count++;
+    });
+    if (count) console.debug(`[edit] boutons câblés: ${count}`);
+  }
+
+  // ---- Délégué GLOBAL (backup)
+  function onGlobalClick(e){
+    const btn = e.target.closest('button[data-action="edit"], .edit-btn, .fa-pen-to-square');
+    if (!btn) return;
+    // Ne double-pas si wiring direct a déjà stoppé
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let id = btn.dataset.id || btn.getAttribute('data-id');
+    if (!id) {
+      const li = btn.closest('li[data-id],[id^="tx-"]');
+      if (li) id = li.dataset.id || (li.id.match(/^tx-(.+)$/)||[])[1];
+    }
+    if (!id) return console.warn('[edit] (global) pas d’id détecté');
+    openEditModal(id);
+  }
+
+  // ---- Boot + ré-attach si rerendus
+  function boot(){
+    wireEditButtons();
+    document.removeEventListener('click', onGlobalClick, true);
+    document.addEventListener('click', onGlobalClick, true);
+
+    // Observe la liste pour recâbler automatiquement
+    const holder = document.getElementById('transactions-list') || document.body;
+    if (window.MutationObserver && holder) {
+      const mo = new MutationObserver(() => wireEditButtons());
+      mo.observe(holder, { childList: true, subtree: true });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once:true });
+  } else {
+    boot();
+  }
+
+  console.debug('[edit] patch béton chargé.');
+})();
+
+// ==== FORCE PATCH clic "crayon" -> openEditModal (ignore preventDefault / stopPropagation) ====
+(() => {
+  function onForceEditClick(e){
+    const btn = e.target.closest('button[data-action="edit"], .edit-btn, .fa-pen-to-square');
+    if (!btn) return;
+
+    // NE PAS se laisser bloquer par d'autres handlers
+    let id =
+    btn.dataset.id ||
+    btn.getAttribute('data-id') ||
+    btn.closest('li[data-id],[id^="tx-"]')?.dataset?.id ||
+    (btn.closest('[id^="tx-"]')?.id.match(/^tx-(.+)$/) || [])[1];
+
+    console.debug('[edit][force] clic crayon capté, id=', id);
+
+    if (id && typeof window.openEditModal === 'function') {
+      window.openEditModal(id);
+    } else {
+      console.warn('[edit][force] pas d’id OU openEditModal absent');
+    }
+  }
+
+  // capture = true pour passer avant tout le monde, et on NE teste pas e.defaultPrevented
+  document.addEventListener('click', onForceEditClick, true);
+})();
+
+// ==== PATCH VISIBILITÉ — forcer #modal-edit-transaction au premier plan ====
+(() => {
+  function ensureEditModalOnTop() {
+    const modal = document.getElementById('modal-edit-transaction');
+    if (!modal) return console.error('[edit][ensure] #modal-edit-transaction introuvable');
+
+    // 1) ferme tout overlay qui pourrait masquer
+    const sheet = document.getElementById('icon-sheet');
+    if (sheet) {
+      sheet.classList.remove('is-open');
+      sheet.setAttribute('aria-hidden', 'true');
+      sheet.style.display = 'none';
+      sheet.style.pointerEvents = 'none';
+    }
+
+    // 2) force l’affichage et le z-index
+    modal.style.setProperty('display','block','important');
+    modal.style.setProperty('visibility','visible','important');
+    modal.style.setProperty('opacity','1','important');
+    modal.style.setProperty('pointer-events','auto','important');
+    modal.style.setProperty('z-index','1000000','important');
+
+    const content = modal.querySelector('.modal-content');
+    if (content) {
+      content.style.setProperty('position','absolute','important');
+      content.style.setProperty('top','50%','important');
+      content.style.setProperty('left','50%','important');
+      content.style.setProperty('transform','translate(-50%, -50%)','important');
+      content.style.setProperty('z-index','1000001','important');
+      content.style.setProperty('display','block','important');
+      // petit focus pour la voir “vivre”
+      const desc = document.getElementById('edit-description');
+      if (desc) setTimeout(() => desc.focus(), 0);
+    }
+
+    // 3) re-applique au cas où un autre handler la “re-cache” juste après
+    setTimeout(() => {
+      if (getComputedStyle(modal).display === 'none') {
+        console.warn('[edit][ensure] ré-application (quelque chose la cache)');
+        ensureEditModalOnTop();
+      }
+    }, 0);
+  }
+
+  // On “wrappe” la fonction existante openEditModal : elle fait son travail, puis on force l’affichage par-dessus tout.
+  const prev = window.openEditModal;
+  window.openEditModal = function(id){
+    try { if (typeof prev === 'function') prev(id); } catch(e){ console.error(e); }
+    ensureEditModalOnTop();
+  };
+
+  // Et on force aussi lors d’un clic crayon (au cas où l’appli appelle une autre routine)
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-action="edit"], .edit-btn, .fa-pen-to-square');
+    if (!btn) return;
+    setTimeout(ensureEditModalOnTop, 0);
+  }, true);
+})();
+
+// ===============================
+//  EDIT — Unstick modal (doublons, z-index, re-close fixes)
+// ===============================
+(() => {
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  // Choisit "la bonne" modale s'il y en a plusieurs puis la met tout en haut du DOM et de la pile
+  function bringEditModalToFront() {
+    const all = Array.from(document.querySelectorAll('#modal-edit-transaction'));
+    if (!all.length) { console.error('[edit][front] aucune modale #modal-edit-transaction'); return null; }
+
+    // On prend la dernière (souvent celle nouvellement injectée / correcte)
+    const modal = all[all.length - 1];
+
+    // Cache les autres doublons si présents
+    all.forEach((m, i) => { if (m !== modal) m.style.display = 'none'; });
+
+    // La met en fin de body pour éviter tout parent invisible
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+
+    // Ferme toute feuille d’icônes / overlay potentielle
+    const sheet = document.getElementById('icon-sheet');
+    if (sheet) {
+      sheet.classList.remove('is-open');
+      sheet.setAttribute('aria-hidden', 'true');
+      sheet.style.display = 'none';
+      sheet.style.pointerEvents = 'none';
+    }
+
+    // Affichage + priorité max
+    modal.style.setProperty('display', 'block', 'important');
+    modal.style.setProperty('visibility', 'visible', 'important');
+    modal.style.setProperty('opacity', '1', 'important');
+    modal.style.setProperty('pointer-events', 'auto', 'important');
+    modal.style.setProperty('position', 'fixed', 'important');
+    modal.style.setProperty('inset', '0', 'important');
+    modal.style.setProperty('z-index', '2147483647', 'important'); // tout en haut
+
+    const content = modal.querySelector('.modal-content');
+    if (content) {
+      content.style.setProperty('position', 'absolute', 'important');
+      content.style.setProperty('top', '50%', 'important');
+      content.style.setProperty('left', '50%', 'important');
+      content.style.setProperty('transform', 'translate(-50%, -50%)', 'important');
+      content.style.setProperty('z-index', '2147483647', 'important');
+      content.style.setProperty('display', 'block', 'important');
+    }
+
+    // Focus description si possible
+    const desc = document.getElementById('edit-description');
+    if (desc) setTimeout(() => desc.focus(), 0);
+
+    return modal;
+  }
+
+  // Empêche une fermeture immédiate par un autre handler "global"
+  function armCloseShield(ms = 120) {
+    const until = Date.now() + ms;
+    function shield(e){
+      // si un autre handler tente de cacher la modale juste après l'ouverture
+      const modal = document.getElementById('modal-edit-transaction');
+      if (!modal) return;
+      const isTryingToClose = getComputedStyle(modal).display === 'none';
+      if (isTryingToClose) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        bringEditModalToFront(); // on la remet
+      }
+      if (Date.now() > until) {
+        document.removeEventListener('click', shield, true);
+      }
+    }
+    document.addEventListener('click', shield, true);
+    setTimeout(() => document.removeEventListener('click', shield, true), ms + 50);
+  }
+
+  // Wrappe la fonction existante
+  const prev = window.openEditModal;
+  window.openEditModal = function(id){
+    try { if (typeof prev === 'function') prev(id); } catch(e){ console.error(e); }
+    armCloseShield(150);
+    const modal = bringEditModalToFront();
+    // Ré-applique 2 fois au cas où un code async la referme encore
+    setTimeout(bringEditModalToFront, 0);
+    setTimeout(bringEditModalToFront, 50);
+    return modal;
+  };
+
+  // ESC pour fermer proprement
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const modal = document.getElementById('modal-edit-transaction');
+    if (modal && getComputedStyle(modal).display !== 'none') {
+      modal.style.display = 'none';
+    }
+  }, true);
+})();
+
+// ===============================
+//  EDIT — sauver la transaction depuis la modale
+// ===============================
+(() => {
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  function parseInputDate(d) {
+    if (!d) return '';
+    // attend "jj-mm-aaaa" → renvoie "aaaa-mm-jj"
+    const m = String(d).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    // fallback: si déjà ISO/date valide, renvoyer tel quel
+    const dd = new Date(d);
+    return isNaN(dd) ? '' : dd.toISOString().slice(0,10);
+  }
+
+  function getStore() {
+    // Source globale si dispo
+    try { if (Array.isArray(window.transactions)) return { arr: window.transactions, src: 'global' }; } catch(_){}
+    // Sinon localStorage (clé standard)
+    try {
+      const raw = localStorage.getItem('transactions');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return { arr, src: 'ls' };
+      }
+    } catch(_){}
+    // Dernier recours: tableau vide (on évite de planter)
+    return { arr: [], src: 'none' };
+  }
+
+  function setStore(store) {
+    if (store.src === 'ls') {
+      try { localStorage.setItem('transactions', JSON.stringify(store.arr)); } catch(_){}
+      // si une globale existe, on la synchronise aussi
+      try { if (Array.isArray(window.transactions)) { window.transactions.length = 0; window.transactions.push(...store.arr); } } catch(_){}
+    }
+    if (store.src === 'global') {
+      try { localStorage.setItem('transactions', JSON.stringify(store.arr)); } catch(_){}
+    }
+  }
+
+  function closeEditModal() {
+    const modal = $('#modal-edit-transaction');
+    if (modal) modal.style.display = 'none';
+  }
+
+  const form = $('#edit-transaction-form');
+  if (!form) return;
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    // -- Récup champs
+    const idEl  = $('#edit-id');
+    const id    = (idEl?.value || idEl?.getAttribute('value') || '').trim();
+    const desc  = $('#edit-description')?.value?.trim() ?? '';
+    const amtS  = $('#edit-amount')?.value ?? '0';
+    const type  = $('#edit-type')?.value === 'income' ? 'income' : 'expense';
+    const dateI = $('#edit-date')?.value ?? '';
+    const cat   = $('#edit-category')?.value ?? '';
+
+    const rec   = $('#edit-recurrence')?.value || 'none';
+    const untilI= $('#edit-until')?.value || '';
+    const instS = $('#edit-installments')?.value || '';
+    const prevB = !!$('#edit-apply-previous')?.checked;
+
+    // -- Normalisations
+    let amount = Math.abs(parseFloat(amtS.replace(',', '.')) || 0);
+    if (type === 'expense') amount = -amount; // convention: dépenses négatives
+
+                        const isoDate  = parseInputDate(dateI);
+    const isoUntil = parseInputDate(untilI);
+    const installments = instS ? parseInt(instS, 10) : undefined;
+
+    // -- Trouve et met à jour
+    const store = getStore();
+    const idx = store.arr.findIndex(t => String(t.id||t._id||t.uuid) === String(id));
+    if (idx === -1) {
+      console.warn('[edit][save] pas trouvé id=', id, '→ rien modifié');
+      closeEditModal();
+      return;
+    }
+
+    const txOld = store.arr[idx];
+    const idKey = ('id' in txOld) ? 'id' : (('_id' in txOld) ? '_id' : ('uuid' in txOld ? 'uuid' : 'id'));
+
+    const txNew = {
+      ...txOld,
+      [idKey]: String(id),
+                        description: desc,
+                        amount,
+                        date: isoDate || txOld.date,           // garde l’ancienne si parsing vide
+                        type,
+                        category: cat || txOld.category,
+                        recurrence: rec,
+                        until: isoUntil || undefined,
+                        installments,
+                        applyPrev: prevB,
+                        applyPrevious: prevB                    // alias si autre code l’emploie
+    };
+
+    store.arr.splice(idx, 1, txNew);
+    setStore(store);
+
+    // -- Fermer + refresh UI
+    closeEditModal();
+
+    // Rafraîchis l’historique
+    if (typeof window.renderTransactionList === 'function') {
+      try { window.renderTransactionList(); } catch(_){}
+    }
+    // Notifie les autres vues (récap, stats, calendrier…)
+    document.dispatchEvent(new Event('transactions:changed'));
+    if (typeof window.updateViews === 'function') {
+      try { window.updateViews(); } catch(_){}
+    }
+  });
+})();
+
+// ===============================
+//  EDIT — Icon Picker V2 (clic, double-clic = Valider, clavier) — FIX restore modal
+// ===============================
+(() => {
+  const $ = (s, ctx=document) => ctx.querySelector(s);
+
+  const ICON_LABELS = {
+    'fa-solid fa-bus': 'Transport',
+    'fa-solid fa-cart-shopping': 'Courses',
+    'fa-solid fa-gas-pump': 'Carburant',
+    'fa-solid fa-briefcase': 'Salaire',
+    'fa-solid fa-basket-shopping': 'Courses',
+    'fa-solid fa-car': 'Voiture',
+    'fa-solid fa-house': 'Logement',
+    'fa-solid fa-utensils': 'Restaurant',
+    'fa-solid fa-bolt': 'Énergie',
+    'fa-solid fa-shield-heart': 'Santé',
+  };
+  const getLabel = (cls) => ICON_LABELS[String(cls).trim()] || '';
+
+  const state = { inputId: null, previewId: null };
+
+  function normalizeIconClass(cell) {
+    let cls = cell.getAttribute('data-icon');
+    if (cls) return cls.trim();
+    const i = cell.querySelector('i');
+    if (i && i.className) return String(i.className).trim();
+    return '';
+  }
+
+  function selectCell(grid, cell) {
+    grid.querySelectorAll('.ip-icon').forEach(el => {
+      el.classList.remove('is-selected');
+      el.setAttribute('aria-selected', 'false');
+    });
+    cell.classList.add('is-selected');
+    cell.setAttribute('aria-selected', 'true');
+    if (!cell.hasAttribute('tabindex')) cell.setAttribute('tabindex', '0');
+    cell.focus({ preventScroll: true });
+  }
+
+  function updatePreview(previewId, iconClass) {
+    const badge = document.getElementById(previewId);
+    if (!badge) return;
+    badge.innerHTML = iconClass
+    ? `<i class="${iconClass}" aria-hidden="true"></i>`
+    : '<i class="fa-regular fa-circle-question" aria-hidden="true"></i>';
+    const picker = badge.closest('.category-picker-v2');
+    const lbl = picker?.querySelector('.cat-current-label');
+    if (lbl) {
+      const txt = getLabel(iconClass);
+      lbl.textContent = txt || (iconClass ? 'Catégorie' : 'Choisir');
+    }
+  }
+
+  function openIconSheet() {
+    const sheet = document.getElementById('icon-sheet');
+    if (!sheet) return console.error('[icon] #icon-sheet introuvable');
+    sheet.classList.add('is-open');
+    sheet.setAttribute('aria-hidden', 'false');
+
+    const grid = document.getElementById('ip-grid');
+    if (grid) {
+      const all = grid.querySelectorAll('.ip-icon');
+      all.forEach(el => { if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0'); });
+
+      const current = document.getElementById(state.inputId)?.value || '';
+      if (current) {
+        const match = grid.querySelector(`.ip-icon[data-icon="${CSS.escape(current)}"]`)
+        || Array.from(all).find(el => normalizeIconClass(el) === current);
+        if (match) selectCell(grid, match);
+      }
+      setTimeout(() => (grid.querySelector('.ip-icon.is-selected') || all[0])?.focus(), 0);
+    }
+
+    // Si on a le patch z-index, on le déclenche aussi
+    if (typeof window.bringIconSheetOnTop === 'function') {
+      setTimeout(window.bringIconSheetOnTop, 0);
+    }
+  }
+
+  function closeIconSheet() {
+    const sheet = document.getElementById('icon-sheet');
+    if (!sheet) return;
+    sheet.classList.remove('is-open');
+    sheet.setAttribute('aria-hidden', 'true');
+  }
+
+  // >>> FIX: utilise __closeIconSheet (qui RESTAURE pointer-events de la modale)
+  function closeSheetAndRestore() {
+    if (typeof window.__closeIconSheet === 'function') {
+      window.__closeIconSheet();   // vient du patch "ICON SHEET > MODALE"
+    } else {
+      closeIconSheet();            // fallback (au cas où)
+// petit secours : réactive la modale si besoin
+const modal = document.getElementById('modal-edit-transaction');
+if (modal) modal.style.pointerEvents = 'auto';
+    }
+  }
+
+  function applySelection() {
+    const grid = document.getElementById('ip-grid');
+    if (!grid) return;
+    const sel = grid.querySelector('.ip-icon.is-selected') || grid.querySelector('.ip-icon[aria-selected="true"]');
+    if (!sel) return;
+    const iconClass = normalizeIconClass(sel);
+
+    const input = document.getElementById(state.inputId);
+    if (input) input.value = iconClass;
+
+    updatePreview(state.previewId, iconClass);
+
+    // <<< ICI : on ferme + on RESTAURE la modale (fix du blocage après double-clic)
+    closeSheetAndRestore();
+  }
+
+  // 1) Bouton "Catégorie"
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.cat-trigger');
+    if (!btn) return;
+    e.preventDefault();
+    state.inputId = btn.getAttribute('data-target-input');
+    state.previewId = btn.getAttribute('data-target-preview');
+    if (!state.inputId || !state.previewId) {
+      console.warn('[icon] data-target-* manquants');
+      return;
+    }
+    openIconSheet();
+  }, true);
+
+  // 2) Grille : clic = sélectionner
+  const grid = document.getElementById('ip-grid');
+  if (grid) {
+    grid.addEventListener('click', (e) => {
+      const cell = e.target.closest('.ip-icon');
+      if (!cell) return;
+      selectCell(grid, cell);
+      const ok = document.getElementById('ip-validate');
+      if (ok) ok.disabled = false;
     });
 
-      btnOpen?.addEventListener('click', openModal);
-      btnCancel?.addEventListener('click', closeModal);
+      // ✅ 3) Double-clic = sélectionner + appliquer + RESTAURER MODALE
+      grid.addEventListener('dblclick', (e) => {
+        const cell = e.target.closest('.ip-icon');
+        if (!cell) return;
+        selectCell(grid, cell);
+        applySelection(); // appelle closeSheetAndRestore()
+      });
 
-      // ---- Helpers capture PDF ----
-      async function ensureVisibleForCapture(el) {
-        // Remonte la chaîne DOM et force display:block sur ce qui est caché (ex: .tab-content)
-        const touched = [];
-        let node = el;
-        while (node && node !== document.body) {
-          const cs = window.getComputedStyle(node);
-          if (cs && cs.display === 'none') {
-            touched.push({ node, old: node.style.display });
-            node.style.display = 'block';
-          }
-          node = node.parentElement;
+      // ✅ 4) Clavier : Enter/Espace = sélectionner + appliquer + RESTAURER
+      grid.addEventListener('keydown', (e) => {
+        const cell = e.target.closest('.ip-icon');
+        if (!cell) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectCell(grid, cell);
+          applySelection();
         }
-        return () => {
-          touched.forEach(({ node, old }) => { node.style.display = old; });
-        };
-      }
+      });
+  }
 
-      async function captureSelectorToPdf(pdf, title, selector, opts = {}) {
-        const el = document.querySelector(selector);
-        if (!el) return;
+  // 5) Boutons du sheet
+  if (typeof window.__applyIconSelection !== 'function') {
+    window.__applyIconSelection = applySelection;
+  }
+  // remplace (ou utilise) la fermeture qui RESTAURE la modale
+  window.__closeIconSheet = closeSheetAndRestore;
 
-        const restore = await ensureVisibleForCapture(el);
-        try {
-          // Titre
-          const margin = 10;
-          const pageW  = pdf.internal.pageSize.getWidth();
-          const pageH  = pdf.internal.pageSize.getHeight();
-          let y = pdf.__cursorY ?? margin;
-
-          // Ajoute un titre (si fourni)
-          if (title) {
-            pdf.setFontSize(16);
-            pdf.text(title, margin, y);
-            y += 6;
-          }
-
-          // Capture DOM -> image
-          const canvas = await html2canvas(el, {
-            backgroundColor: null,           // préserve le thème
-            scale: window.devicePixelRatio > 1 ? 2 : 1.5
-          });
-          const imgData = canvas.toDataURL('image/png');
-          const targetW = pageW - 2*margin;
-          const imgH = canvas.height * (targetW / canvas.width);
-          const remaining = pageH - y - margin;
-
-          // Nouvelle page si ça ne tient pas
-          if (imgH > remaining) {
-            pdf.addPage();
-            y = margin;
-          }
-
-          pdf.addImage(imgData, 'PNG', margin, y, targetW, imgH);
-          pdf.__cursorY = y + imgH + 8; // nouvelle position "courante"
-          // Saut de page implicite si on dépasse trop
-          if (pdf.__cursorY > pageH - margin) {
-            pdf.addPage();
-            pdf.__cursorY = margin;
-          }
-        } finally {
-          restore(); // remet l'état d'affichage d'origine
-        }
-      }
-
-      async function runExport() {
-        const wantCalendar = cbCalendar?.checked;
-        const wantMonth    = cbMonth?.checked;
-        const wantStats    = cbStats?.checked;
-        const wantHistory  = cbHistory?.checked;
-
-        if (!wantCalendar && !wantMonth && !wantStats && !wantHistory) {
-          alert('Sélectionne au moins un élément à exporter.');
-          return;
-        }
-
-        // UI lock
-        const oldText = btnRun.innerHTML;
-        btnRun.disabled = true;
-        btnRun.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Génération…';
-
-        try {
-          const { jsPDF } = window.jspdf || {};
-          if (!jsPDF || !window.html2canvas) {
-            alert('Librairies PDF manquantes. Vérifie les balises <script> html2canvas et jsPDF.');
-            return;
-          }
-
-          const pdf = new jsPDF('p', 'mm', 'a4');
-          pdf.__cursorY = 10; // curseur vertical "global"
-
-          // Ordre logique
-          if (wantCalendar) await captureSelectorToPdf(pdf, 'Calendrier', '#calendar-section');
-          if (wantMonth)    await captureSelectorToPdf(pdf, 'Récapitulatif du mois', '#month-summary');
-          if (wantStats)    await captureSelectorToPdf(pdf, 'Statistiques', '#stats-section');
-          if (wantHistory)  await captureSelectorToPdf(pdf, 'Historique', '#transactions-section');
-
-          const name = (fileInput?.value || 'finances.pdf').trim().replace(/\s+/g,'-');
-          pdf.save(name || 'finances.pdf');
-
-          closeModal();
-        } catch (err) {
-          console.error('Erreur export PDF:', err);
-          alert('Échec de la génération du PDF. Regarde la console pour les détails.');
-        } finally {
-          btnRun.disabled = false;
-          btnRun.innerHTML = oldText;
-        }
-      }
-
-      btnRun?.addEventListener('click', runExport);
+  // 6) Ouverture modale d’édition -> refléter l’icône actuelle
+  const prevOpen = window.openEditModal;
+  window.openEditModal = function(id) {
+    try { if (typeof prevOpen === 'function') prevOpen(id); } catch(e){ console.error(e); }
+    const currentClass = document.getElementById('edit-category')?.value || '';
+    updatePreview('edit-selected-category', currentClass);
+  };
 })();
+
+// ===============================
+//  ICON SHEET > MODALE — priorité d'affichage et clics
+// ===============================
+(() => {
+  const SHEET_TOP = 2147483647; // tout en haut (même niveau que la modale forcée)
+
+function openSheetOverModal() {
+  const sheet = document.getElementById('icon-sheet');
+  if (!sheet) return;
+  const panel = sheet.querySelector('.sheet__panel');
+  const modal = document.getElementById('modal-edit-transaction');
+
+  // Mettre le sheet APRÈS la modale dans le DOM
+  if (sheet.parentElement !== document.body) document.body.appendChild(sheet);
+
+  // Ouvrir le sheet
+  sheet.classList.add('is-open');
+  sheet.setAttribute('aria-hidden', 'false');
+
+  // Empiler au-dessus de la modale (mêmes valeurs mais sheet au-dessus)
+  sheet.style.setProperty('z-index', String(SHEET_TOP), 'important');
+  panel?.style.setProperty('z-index', String(SHEET_TOP), 'important');
+
+  // Laisser passer les clics vers le sheet uniquement
+  if (modal) {
+    modal.style.setProperty('z-index', String(SHEET_TOP - 1), 'important');
+    modal.style.pointerEvents = 'none';
+    const content = modal.querySelector('.modal-content');
+    content?.style.setProperty('z-index', String(SHEET_TOP - 1), 'important');
+  }
+}
+
+function closeSheetRestore() {
+  const sheet = document.getElementById('icon-sheet');
+  const modal = document.getElementById('modal-edit-transaction');
+  if (sheet) {
+    sheet.classList.remove('is-open');
+    sheet.setAttribute('aria-hidden', 'true');
+  }
+  if (modal) {
+    // Restaure la modale “au-dessus” de l’overlay général
+    modal.style.setProperty('z-index', String(SHEET_TOP), 'important');
+    modal.style.pointerEvents = 'auto';
+    const content = modal.querySelector('.modal-content');
+    content?.style.setProperty('z-index', String(SHEET_TOP), 'important');
+  }
+}
+
+// Ouvrir au-dessus quand on clique "Catégorie"
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.cat-trigger')) {
+    // Le sheet s’ouvre d’abord → on élève immédiatement après
+    setTimeout(openSheetOverModal, 0);
+  }
+  // Fermer / valider / backdrop
+  if (e.target.closest('#ip-validate, #ip-cancel, .sheet__close, .sheet__backdrop')) {
+    setTimeout(closeSheetRestore, 0);
+  }
+}, true);
+
+// Expose la fermeture si d'autres bouts de code l'appellent
+window.__closeIconSheet = closeSheetRestore;
+})();
+
+// ======================================================
+//  STATS — Plotly (unique) — périodes FR OK + libellés humains
+//  ==> remplace ENTIEREMENT l'ancien bloc "STATS — Compat: ..."
+// ======================================================
+window.renderStats = function renderStatsPlotly(){
+  const el = document.getElementById('pie-chart');   // <div id="pie-chart">
+  if (!el || !window.Plotly) return;
+
+  // Taille de ta carte (déjà fixée)
+  const FIX_W = 738.4;
+  const FIX_H = 502.833;
+
+  // ✅ Taille DU GRAPHE (un peu plus petite que la carte)
+  const CHART_W = Math.floor(FIX_W - 32); // marge visuelle
+  const CHART_H = 345;                    // hauteur confortable
+
+  // Conteneur (on NE fixe plus la hauteur : la carte gère)
+  const holder = el.parentElement || document.getElementById('chart-container');
+  if (holder) {
+    holder.style.width = `${FIX_W}px`;
+    holder.style.maxWidth = `${FIX_W}px`;
+    holder.style.margin = '0 auto';
+    holder.style.boxSizing = 'border-box';
+    holder.style.overflow = 'hidden';
+  }
+
+  // Div Plotly aux dimensions du graphe (pas celles de la carte)
+  el.style.width = `${CHART_W}px`;
+  el.style.height = `${CHART_H}px`;
+  el.style.maxWidth = `${CHART_W}px`;
+  el.style.maxHeight = `${CHART_H}px`;
+  el.style.display = 'block';
+
+  // === utils (inchangés) ===
+  function normalizePeriod(val) {
+    const s = String(val || '').toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu,'')
+    .replace(/\s+/g,'').replace(/-/g,'');
+    if (['day','today','jour','aujourdhui','auj','cejour'].includes(s)) return 'day';
+    if (['year','annee','anneeencours','currentyear','yearcurrent','ytd','yeartodate'].includes(s)) return 'year';
+    return 'month';
+  }
+  function parseDateAny(raw) {
+    if (!raw) return null;
+    const str = String(raw).trim();
+    const m = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) return new Date(+m[3], +m[2]-1, +m[1]);
+    const d = new Date(str);
+    return isNaN(d) ? null : d;
+  }
+  const LABELS = {
+    'fa-solid fa-bus': 'Transport',
+    'fa-solid fa-cart-shopping': 'Courses',
+    'fa-solid fa-basket-shopping': 'Courses',
+    'fa-solid fa-gas-pump': 'Carburant',
+    'fa-solid fa-briefcase': 'Salaire',
+    'fa-solid fa-car': 'Voiture',
+    'fa-solid fa-house': 'Logement',
+    'fa-solid fa-utensils': 'Restaurant',
+    'fa-solid fa-bolt': 'Énergie',
+    'fa-solid fa-shield-heart': 'Santé',
+  };
+  const toHuman = (cat) => {
+    const s = String(cat||'').trim();
+    if (LABELS[s]) return LABELS[s];
+    const m = s.match(/fa-[a-z0-9-]+/gi);
+    if (m && m.length) {
+      const last = m[m.length-1].replace(/^fa-/,'').replace(/-/g,' ');
+      return last.charAt(0).toUpperCase()+last.slice(1);
+    }
+    return s || 'Autre';
+  };
+  const fmtEUR = (n) => Number(n||0).toLocaleString('fr-FR',{style:'currency',currency:'EUR'});
+  function getTxs() {
+    if (Array.isArray(window.transactions)) return window.transactions;
+    try { const raw = localStorage.getItem('transactions'); return raw ? JSON.parse(raw) : []; } catch(_) { return []; }
+  }
+  function filterByPeriod(txs, periodRaw) {
+    const period = normalizePeriod(periodRaw);
+    const now = new Date(), y=now.getFullYear(), m=now.getMonth(), d=now.getDate();
+    return txs.filter(t => {
+      const dt = parseDateAny(t.date || t.day || t.createdAt);
+      if (!dt) return false;
+      if (period === 'day')  return dt.getFullYear()===y && dt.getMonth()===m && dt.getDate()===d;
+      if (period === 'year') return dt.getFullYear()===y;
+      return dt.getFullYear()===y && dt.getMonth()===m;
+    });
+  }
+
+  const periodRaw = document.getElementById('stats-period')?.value || 'month';
+  const period = normalizePeriod(periodRaw);
+  const txs = filterByPeriod(getTxs(), period);
+
+  const expenses = txs.filter(t => String(t.type).toLowerCase()==='expense' || Number(t.amount) < 0);
+  const by = new Map();
+  for (const t of expenses) {
+    const k = toHuman(t.category);
+    const v = Math.abs(Number(t.amount) || 0);
+    by.set(k, (by.get(k) || 0) + v);
+  }
+  const labels = Array.from(by.keys());
+  const values = Array.from(by.values());
+
+  const data = !values.length ? [{
+    type: 'pie',
+    labels: ['Aucune donnée'],
+    values: [1],
+    textinfo: 'none',
+    hoverinfo: 'none',
+    marker: { colors: ['#e9ecef'] }
+  }] : [{
+    type: 'pie',
+    labels,
+    values,
+    textinfo: 'label+percent',
+    hovertemplate: '%{label}: %{value:,.2f} € (%{percent})<extra></extra>',
+                      sort: false
+  }];
+
+  // ⬅️ largeur/hauteur du GRAPHE (pas de la carte)
+  const layout = !values.length ? {
+    width: CHART_W, height: CHART_H,
+    margin: {l:0,r:0,t:0,b:0},
+    showlegend:false,
+    annotations: [{ text: 'Aucune dépense sur la période', showarrow:false, y:0.5 }]
+  } : {
+    width: CHART_W, height: CHART_H,
+    margin: {l:0,r:0,t:0,b:0},
+    showlegend:true,
+    legend: { orientation: 'h', y: -0.12 }
+  };
+
+  Plotly.react(el, data, layout, {
+    responsive: false,   // on fige la taille du graphe
+    displaylogo: false,
+    modeBarButtonsToRemove: ['lasso2d','select2d']
+  });
+
+  const info = document.getElementById('stats-info');
+  if (info) {
+    const total = values.reduce((a,b)=>a+b,0);
+    const txtPer = period === 'day' ? 'aujourd’hui' : period === 'year' ? 'cette année' : 'ce mois';
+    info.textContent = values.length
+    ? `Total des dépenses ${txtPer} : ${fmtEUR(total)}`
+    : `Aucune dépense ${txtPer}.`;
+  }
+};
