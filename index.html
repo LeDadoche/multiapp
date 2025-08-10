@@ -27,6 +27,20 @@
 
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Forcer l’overlay à occuper tout l’écran et le panneau à s’afficher */
+    #icon-sheet{position:fixed; inset:0; display:none; z-index:4000;}
+    #icon-sheet.is-open{display:block;}
+    #icon-sheet .sheet__backdrop{position:absolute; inset:0; background:rgba(0,0,0,.45);}
+    #icon-sheet .sheet__panel{
+      position:absolute; left:0; right:0; bottom:0;
+      background:#fff; border-radius:16px 16px 0 0;
+      max-height:88vh; overflow:auto;
+      /* Pas d’animation tant que ça ne s’affiche pas correctement */
+      transform:translateY(0);
+    }
+  </style>
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
   <!-- Material Icons -->
@@ -436,29 +450,22 @@
         <div class="form-row">
           <label for="add-category">Catégorie :</label>
             <!-- === PICKER Catégorie (formulaire principal) === -->
-        <div id="add-category-picker" class="category-picker" style="position:relative;">
+        <div class="category-picker-v2">
           <input type="hidden" id="add-category" name="category" required>
-          <span id="add-selected-category" class="category-icon-preview"
-                title="Choisir une icône"
-                style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;border:2px solid #65b8f7;background:#fff;cursor:pointer;font-size:1.6em;">
-            <i class="fa-regular fa-circle-question"></i>
-          </span>
-
-          <div id="add-category-dropdown" class="category-dropdown" style="display:none;">
-            <div class="cp-toolbar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;">
-              <div class="cp-search" style="flex:1;display:flex;gap:.4rem;align-items:center;">
-                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                <input id="add-cp-search-input" class="cp-search-input" type="text" placeholder="Rechercher…" style="width:100%;">
-              </div>
-              <div class="cp-cats" id="add-cp-cats" style="display:flex;flex-wrap:wrap;gap:.4rem;"></div>
-            </div>
-
-            <div class="icon-picker-list cp-icons" id="add-cp-icons"
-                style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.4rem;"></div>
-          </div>
-        </div>
-
-        <div style="margin-top:1.5em; display:flex; justify-content:flex-end; gap:1em;">
+          <button
+            type="button"
+            class="cat-trigger"
+            data-target-input="add-category"
+            data-target-preview="add-selected-category"
+            aria-haspopup="dialog"
+            aria-controls="icon-sheet"
+            title="Choisir une catégorie">
+            <span id="add-selected-category" class="cat-badge">
+              <i class="fa-regular fa-circle-question"></i>
+            </span>
+            <span class="cat-current-label">Choisir</span>
+          </button>
+        </div><div style="margin-top:1.5em; display:flex; justify-content:flex-end; gap:1em;">
           <button type="submit" style="background:#27524b;color:#fff;padding:0.5em 1.2em;border:none;border-radius:4px;cursor:pointer;">Ajouter</button>
           <button type="button" id="add-cancel-btn" style="background:#d32f2f;color:#fff;padding:0.5em 1.2em;border:none;border-radius:4px;cursor:pointer;">Annuler</button>
         </div>
@@ -491,48 +498,25 @@
 
         <div class="form-row">
           <label for="edit-type">Type :</label>
-          <div class="form-row">
-          <div id="edit-category-picker" class="category-picker" style="position:relative;">
-            <input type="hidden" id="edit-category" name="category" required>
-            <span id="edit-selected-category" class="category-icon-preview"
-                  title="Choisir une icône"
-                  style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;border:2px solid #65b8f7;background:#fff;cursor:pointer;font-size:1.6em;">
-              <i class="fa-regular fa-circle-question"></i>
-            </span>
-
-            <div id="edit-category-dropdown" class="category-dropdown" style="display:none;">
-              <div class="cp-toolbar" style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;">
-                <div class="cp-search" style="flex:1;display:flex;gap:.4rem;align-items:center;">
-                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                  <input id="edit-cp-search-input" class="cp-search-input" type="text" placeholder="Rechercher…" style="width:100%;">
-                </div>
-                <div class="cp-cats" id="edit-cp-cats" style="display:flex;flex-wrap:wrap;gap:.4rem;"></div>
-              </div>
-
-              <div class="icon-picker-list cp-icons" id="edit-cp-icons"
-                  style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.4rem;"></div>
-            </div>
-          </div>
-          </div>
-          <select id="edit-type" required>
-            <option value="expense">Dépense</option>
-            <option value="income">Revenu</option>
-          </select>
-        </div>
-
+        <!-- Catégorie (picker V2) -->
         <div class="form-row">
-          <label for="edit-recurrence">Récurrence :</label>
-          <select id="edit-recurrence">
-            <option value="none">Aucune</option>
-            <option value="monthly">Mensuelle</option>
-            <option value="yearly">Annuelle</option>
-            <option value="installments">Paiement en X fois</option>
-          </select>
-        </div>
-
-        <div class="form-row" id="edit-end-row" style="display:none;">
-          <label for="edit-until">Jusqu’à :</label>
-          <input type="text" id="edit-until" class="date-input" placeholder="jj-mm-aaaa" />
+          <label for="edit-category">Catégorie :</label>
+          <div class="category-picker-v2">
+            <input type="hidden" id="edit-category" name="category" required>
+            <button
+              type="button"
+              class="cat-trigger"
+              data-target-input="edit-category"
+              data-target-preview="edit-selected-category"
+              aria-haspopup="dialog"
+              aria-controls="icon-sheet"
+              title="Choisir une catégorie">
+              <span id="edit-selected-category" class="cat-badge">
+                <i class="fa-regular fa-circle-question"></i>
+              </span>
+              <span class="cat-current-label">Choisir</span>
+            </button>
+          </div>
         </div>
 
         <div class="form-row" id="edit-apply-previous-row" style="display:none;">
@@ -600,7 +584,10 @@
     <div class="sheet__grab"></div>
     <div class="sheet__header">
       <h3 class="sheet__title">Choisir une icône</h3>
-      <button class="sheet__close" aria-label="Fermer"><i class="fa-solid fa-xmark"></i></button>
+      <button class="sheet__close" type="button" aria-label="Fermer"
+              onclick="window.__closeIconSheet && window.__closeIconSheet()">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
     </div>
 
     <div class="sheet__toolbar">
@@ -614,8 +601,14 @@
     <div id="ip-grid" class="ip-grid" aria-live="polite"></div>
 
     <div class="sheet__footer">
-      <button id="ip-cancel" class="btn-ghost">Annuler</button>
-      <button id="ip-validate" class="btn-primary" disabled>Valider</button>
+      <button id="ip-cancel" class="btn-ghost" type="button"
+              onclick="window.__closeIconSheet && window.__closeIconSheet()">
+        Annuler
+      </button>
+      <button id="ip-validate" class="btn-primary" type="button" disabled
+        onclick="window.__applyIconSelection && window.__applyIconSelection()">
+        Valider
+      </button>
     </div>
   </div>
 </div>

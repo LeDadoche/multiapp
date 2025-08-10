@@ -1095,3 +1095,78 @@ html.dark-mode .cat-icon:hover { background:#2a2a2a; border-color: var(--color-p
 .dark-mode .sheet__panel{ background:#181818; color:#e3e3e3; }
 .dark-mode .ip-icon{ background:#1a1a1a; border-color:#303030; color:#e3e3e3; }
 .dark-mode .ip-icon:hover{ background:#2a2a2a; border-color:var(--color-primary); }
+
+/* Hotfix: forcer l'affichage du sheet quand ouvert */
+#icon-sheet[aria-hidden="false"] { display: block !important; }
+
+/* === DEBUG/FORCE: Icon Sheet visible et au-dessus de tout === */
+#icon-sheet {
+position: fixed !important;
+inset: 0 !important;
+display: none;
+z-index: 99999 !important;
+}
+#icon-sheet.is-open {
+display: block !important;
+}
+#icon-sheet .sheet__backdrop {
+position: absolute;
+inset: 0;
+background: rgba(0,0,0,.45);
+}
+#icon-sheet .sheet__panel {
+position: absolute !important;
+left: 0; right: 0; bottom: 0;
+background: var(--color-surface, #fff);
+color: var(--on-surface, #324a52);
+border-radius: 16px 16px 0 0;
+padding: .8rem .9rem 1rem;
+min-height: 240px;             /* garantit une hauteur non nulle */
+max-height: 88vh;
+overflow: auto;
+transform: translateY(0) !important; /* en mode debug, toujours visible */
+}
+
+/* Icon Sheet – overrides sûrs */
+#icon-sheet {
+position: fixed;
+inset: 0;
+z-index: 4000;
+display: none;           /* fermé par défaut */
+pointer-events: none;    /* ne capte rien quand fermé */
+}
+#icon-sheet.is-open {
+display: block;
+pointer-events: auto;    /* capte les clics quand ouvert */
+}
+#icon-sheet .sheet__backdrop {
+position: absolute;
+inset: 0;
+background: rgba(0,0,0,.45);
+z-index: 0;              /* sous le panneau */
+}
+#icon-sheet .sheet__panel {
+position: absolute;
+left: 0; right: 0; bottom: 0;
+max-height: 70vh;
+background: var(--panel-bg, #1e1e1e);
+color: inherit;
+border-top-left-radius: 16px;
+border-top-right-radius: 16px;
+padding: 14px;
+box-shadow: 0 -10px 30px rgba(0,0,0,.35);
+z-index: 1;              /* au-dessus du backdrop */
+pointer-events: auto;    /* reçoit bien les clics */
+transform: translateY(0);/* on ouvre sans animation bloquante */
+}
+#icon-sheet .btn-primary[disabled] {
+opacity: .5;
+pointer-events: none;    /* désactivé = vraiment inactif */
+}
+
+/* Icon Sheet – sécurité clics/z-index */
+#icon-sheet { position: fixed; inset: 0; z-index: 999999 !important; }
+#icon-sheet .sheet__backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); z-index: 0; }
+#icon-sheet .sheet__panel { position: absolute; left:0; right:0; bottom:0; z-index: 1; pointer-events: auto; }
+
+#icon-sheet[aria-hidden="true"]{ display:none !important; }

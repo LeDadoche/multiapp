@@ -1,3 +1,52 @@
+// Helpers sans crash
+const $$ = (s, ctx=document) => Array.from(ctx.querySelectorAll(s));
+const onAll = (sel, evt, fn) => $$(sel).forEach(el => el.addEventListener(evt, fn));
+
+// --- PATCH A: sécurité pour openIconPicker (existe partout, ne plante jamais)
+if (typeof window.openIconPicker !== 'function') {
+  window.openIconPicker = function (e) {
+    try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
+    const trg = e?.currentTarget || e?.target || null;
+    const inputId   = trg?.dataset?.targetInput   || 'category';
+    const previewId = trg?.dataset?.targetPreview || 'selected-category';
+
+    // Si le bottom sheet V2 est dispo, on l'utilise
+    if (typeof window.__openIconSheet === 'function') {
+      window.__openIconSheet(inputId, previewId);
+      return;
+    }
+    // Fallback: ancien dropdown
+    const root = trg ? trg.closest('#category-picker, .category-picker, .category-picker-v2') : null;
+    const dd   = root?.querySelector('.category-dropdown');
+    if (dd) dd.style.display = (getComputedStyle(dd).display === 'none' ? 'block' : 'none');
+  };
+}
+
+// Exemple d’usage (tolérant si un bloc n’existe pas)
+onAll('#category-picker .category-icon-preview, .category-picker-v2 .cat-trigger', 'click', openIconPicker);
+
+// --- FIX: pont unique pour ouvrir le picker d'icônes depuis partout ---
+function openIconPicker(e){
+  try {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+  } catch {}
+  const trg = e?.currentTarget || e?.target || null;
+  const inputId   = trg?.dataset?.targetInput   || 'category';
+  const previewId = trg?.dataset?.targetPreview || 'selected-category';
+
+  // Si le bottom sheet V2 est chargé, on l'utilise
+  if (typeof window.__openIconSheet === 'function') {
+    window.__openIconSheet(inputId, previewId);
+    return;
+  }
+
+  // Sinon: fallback vers l'ancien dropdown si présent
+  const root = trg ? trg.closest('#category-picker, .category-picker, .category-picker-v2') : null;
+  const dd   = root?.querySelector('.category-dropdown');
+  if (dd) dd.style.display = (getComputedStyle(dd).display === 'none' ? 'block' : 'none');
+}
+
 // --- Configuration Dropbox ---
 const DROPBOX_APP_KEY = "sx9tl18fkusxm05";
 const DROPBOX_FILE = "/transactions.json";
@@ -882,11 +931,30 @@ function setupMonthPicker() {
 
 // Rendu d’une icône de catégorie inline (pour listes)
 function renderCategoryIconInline(cat) {
-  const [set, name] = String(cat || '').split('::');
-  if (set === 'fa') return `<i class="${name}" aria-hidden="true"></i>`;
-  if (set === 'mi') return `<span class="material-icons" aria-hidden="true">${name}</span>`;
-  if (set === 'bs') return `<i class="bi ${name}" aria-hidden="true"></i>`;
-  return `<i class="fa-regular fa-circle-question" aria-hidden="true"></i>`;
+  const val = String(cat || '').trim();
+  if (!val) return `<i class="fa-regular fa-circle-question" aria-hidden="true"></i>`;
+
+  // 1) Ancien format set::name
+  if (val.includes('::')) {
+    const [set, name] = val.split('::');
+    if (set === 'fa') return `<i class="${name}" aria-hidden="true"></i>`;
+    if (set === 'mi') return `<span class="material-icons" aria-hidden="true">${name}</span>`;
+    if (set === 'bs') return `<i class="bi ${name}" aria-hidden="true"></i>`;
+  }
+
+  // 2) Nouveau format: classes directes
+  // Font Awesome : contient "fa-"
+  if (/\bfa-/.test(val)) {
+    return `<i class="${val}" aria-hidden="true"></i>`;
+  }
+  // Bootstrap Icons : "bi ..." ou "bi-..."
+  if (/^bi\b/.test(val) || /\bbi-/.test(val)) {
+    const cls = val.startsWith('bi ') ? val : (val.startsWith('bi-') ? `bi ${val}` : val);
+    return `<i class="${cls}" aria-hidden="true"></i>`;
+  }
+
+  // 3) Fallback : on considère un nom Material Icons
+  return `<span class="material-icons" aria-hidden="true">${val}</span>`;
 }
 
 // ====== LISTE / HISTORIQUE ======
@@ -989,6 +1057,10 @@ function renderStats() {
   const values = labels.map(k => byCat[k]);
 
   if (pieChart) { pieChart.destroy(); pieChart = null; }
+  if (typeof Chart === 'undefined') {
+    info.textContent = 'Stats indisponibles (Chart.js non chargé)';
+    return;
+  }
   pieChart = new Chart(canvas.getContext('2d'), {
     type: 'pie',
     data: { labels, datasets: [{ data: values }] },
@@ -1139,6 +1211,13 @@ function openEditModal(tx) {
   writeDateInput('edit-date', tx.date);
   document.getElementById('edit-type').value = tx.type;
 
+  // === Catégorie (nouveau : on alimente l'input caché + l'aperçu)
+  const editCatInput = document.getElementById('edit-category');
+  const editCatPreview = document.getElementById('edit-selected-category');
+  const catVal = tx.category || DEFAULT_CATEGORY;
+  if (editCatInput) editCatInput.value = catVal;
+  if (editCatPreview) editCatPreview.innerHTML = renderCategoryIconInline(catVal);
+
   // Récurrence
   const r = tx.recurrence || 'none';
   const recSel = document.getElementById('edit-recurrence');
@@ -1213,6 +1292,7 @@ document.getElementById('edit-transaction-form')?.addEventListener('submit', (ev
   const untilISO = readDateInput('edit-until');
   const applyPrev = document.getElementById('edit-apply-previous')?.checked || false;
   const installments = Number(document.getElementById('edit-installments')?.value || 0);
+  const category = document.getElementById('edit-category')?.value || DEFAULT_CATEGORY; // ✅ NEW
 
   const tx = transactions.find(t => t.id === id);
   if (!tx) return;
@@ -1232,6 +1312,7 @@ document.getElementById('edit-transaction-form')?.addEventListener('submit', (ev
   tx.amount = amount;
   tx.date = dateISO;
   tx.type = type;
+  tx.category = category;                 // ✅ NEW
   tx.recurrence = recurrence || 'none';
   tx.applyPrev = applyPrev;
 
@@ -1285,9 +1366,11 @@ document.getElementById('add-transaction-form')?.addEventListener('submit', func
   document.getElementById('modal-add-transaction').style.display = 'none';
 });
 
-document.getElementById('modal-add-transaction').addEventListener('click', function(e){
+// 1) Modale d'ajout rapide (évite le crash si absente)
+const modalAddTx = document.getElementById('modal-add-transaction');
+modalAddTx?.addEventListener('click', function(e){
   if (e.target.id === 'modal-add-transaction' || e.target.id === 'add-cancel-btn') {
-    document.getElementById('modal-add-transaction').style.display = 'none';
+    modalAddTx.style.display = 'none';
   }
 });
 
@@ -1312,68 +1395,90 @@ function updateViews() {
   renderMonthSummary();
 }
 
-// === Auth application (mot de passe local simple) ===
+// === Auth application (mot de passe local simple) — BYPASS SÛR ===
 async function hashPassword(pwd) {
   const enc = new TextEncoder();
   const buffer = await crypto.subtle.digest('SHA-256', enc.encode(pwd));
-  return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-// Affiche une fenêtre modale demandant la création ou l'entrée d'un mot de passe avant d'utiliser l'application
 function setupAuthentication(callback) {
-  const overlay = document.getElementById('auth-overlay');
-  const titleEl = document.getElementById('auth-title');
-  const confirmRow = document.getElementById('auth-confirm-row');
-  const form = document.getElementById('auth-form');
-  const pwdInput = document.getElementById('auth-password');
+  const overlay      = document.getElementById('auth-overlay');
+  const form         = document.getElementById('auth-form');
+  const titleEl      = document.getElementById('auth-title');
+  const confirmRow   = document.getElementById('auth-confirm-row');
+  const pwdInput     = document.getElementById('auth-password');
   const confirmInput = document.getElementById('auth-password-confirm');
 
   const storedHash = localStorage.getItem('appPasswordHash');
 
-  if (sessionStorage.getItem('unlocked') === '1') {
+  // 🔧 Flag simple pour (dés)activer l'auth. Laisse FALSE le temps de débugger.
+  const AUTH_ENABLED = false;
+
+  // 1) Auth désactivée → on débloque toujours l’appli
+  if (!AUTH_ENABLED) {
+    sessionStorage.setItem('unlocked', '1');
+    if (overlay) overlay.style.display = 'none';
     if (typeof callback === 'function') callback();
     return;
   }
 
-  if (!storedHash) {
-    titleEl.textContent = 'Créer un mot de passe';
-    confirmRow.style.display = '';
-  } else {
-    titleEl.textContent = 'Saisir le mot de passe';
-    confirmRow.style.display = 'none';
+  // 2) Si markup incomplet, on ne bloque pas l’appli
+  if (!overlay || !form || !pwdInput) {
+    sessionStorage.setItem('unlocked', '1');
+    if (typeof callback === 'function') callback();
+    return;
   }
+
+  // 3) Session déjà déverrouillée
+  if (sessionStorage.getItem('unlocked') === '1') {
+    overlay.style.display = 'none';
+    if (typeof callback === 'function') callback();
+    return;
+  }
+
+  // 4) Affiche l’overlay d’auth (si activée)
+  if (titleEl)    titleEl.textContent = storedHash ? 'Saisir le mot de passe' : 'Créer un mot de passe';
+  if (confirmRow) confirmRow.style.display = storedHash ? 'none' : '';
 
   overlay.style.display = 'block';
 
   form.onsubmit = async (e) => {
     e.preventDefault();
     const pwd = pwdInput.value;
+
+    // Création
     if (!storedHash) {
-      const confirm = confirmInput.value;
-      if (!pwd || pwd !== confirm) {
-        alert('Les mots de passe ne correspondent pas.');
-        return;
-      }
+      const confirm = confirmInput?.value || '';
+      if (!pwd || pwd !== confirm) { alert('Les mots de passe ne correspondent pas.'); return; }
       const hash = await hashPassword(pwd);
       localStorage.setItem('appPasswordHash', hash);
       sessionStorage.setItem('unlocked', '1');
       overlay.style.display = 'none';
       if (typeof callback === 'function') callback();
+      return;
+    }
+
+    // Connexion
+    if (!pwd) { alert('Merci de saisir votre mot de passe.'); return; }
+    const hash = await hashPassword(pwd);
+    if (hash === storedHash) {
+      sessionStorage.setItem('unlocked', '1');
+      overlay.style.display = 'none';
+      if (typeof callback === 'function') callback();
     } else {
-      if (!pwd) {
-        alert('Merci de saisir votre mot de passe.');
-        return;
-      }
-      const hash = await hashPassword(pwd);
-      if (hash === storedHash) {
-        sessionStorage.setItem('unlocked', '1');
-        overlay.style.display = 'none';
-        if (typeof callback === 'function') callback();
-      } else {
-        alert('Mot de passe incorrect.');
-      }
+      alert('Mot de passe incorrect.');
     }
   };
+
+  // 5) Sécurité: si l’overlay est masqué par le CSS, on ne bloque pas l’appli
+  requestAnimationFrame(() => {
+    const visible = overlay.offsetParent !== null || getComputedStyle(overlay).display !== 'none';
+    if (!visible) {
+      sessionStorage.setItem('unlocked', '1');
+      if (typeof callback === 'function') callback();
+    }
+  });
 }
 
 // --- INIT ---
@@ -1387,10 +1492,94 @@ document.addEventListener('DOMContentLoaded', () => {
     restoreGoogleSession();
     restoreMicrosoftSession();
 
-    if (isDropboxConnected()) {
-      dbx = new Dropbox.Dropbox({ accessToken: accessToken });
-      loadTransactionsDropbox();
+    const hasDropboxSDK = !!(window.Dropbox && Dropbox.Dropbox);
+
+    function ensureEssentialDom() {
+      const need = ['current-month','calendar','day-details','stats-period','pie-chart','stats-info','transactions-list','month-tx-list','prev-month','next-month','go-today','theme-toggle'];
+      const missing = need.filter(id => !document.getElementById(id));
+      if (!missing.length) return;
+
+      // conteneur cible
+      const root = document.getElementById('app') || document.body;
+
+      // Header calendrier
+      if (!document.getElementById('theme-toggle')) {
+        const t = document.createElement('button'); t.id='theme-toggle'; t.textContent='🌓'; root.appendChild(t);
+      }
+      if (!document.getElementById('current-month')) {
+        const bar = document.createElement('div'); bar.style.cssText='display:flex;gap:8px;align-items:center;margin:8px 0;';
+        bar.innerHTML = `
+        <button id="prev-month">◀</button>
+        <strong id="current-month" style="min-width:200px;display:inline-block"></strong>
+        <button id="next-month">▶</button>
+        <button id="go-today">Aujourd’hui</button>
+        `;
+        root.appendChild(bar);
+      }
+      if (!document.getElementById('calendar')) {
+        const t = document.createElement('table'); t.id='calendar'; t.style.cssText='width:100%;border-collapse:collapse;'; root.appendChild(t);
+      }
+      if (!document.getElementById('day-details')) {
+        const d = document.createElement('div'); d.id='day-details'; d.style.marginTop='8px'; root.appendChild(d);
+      }
+
+      // Stats
+      if (!document.getElementById('stats-period')) {
+        const wrap = document.createElement('div'); wrap.style.marginTop='16px';
+        wrap.innerHTML = `
+        <label for="stats-period">Période :</label>
+        <select id="stats-period">
+        <option value="day">Jour</option>
+        <option value="month" selected>Mois</option>
+        <option value="year">Année</option>
+        </select>
+        <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
+        <canvas id="pie-chart" width="280" height="280"></canvas>
+        <div id="stats-info"></div>
+        </div>
+        `;
+        root.appendChild(wrap);
+      }
+
+      // Liste + récap
+      if (!document.getElementById('transactions-list')) {
+        const h = document.createElement('h3'); h.textContent='Transactions'; root.appendChild(h);
+        const ul = document.createElement('ul'); ul.id='transactions-list'; root.appendChild(ul);
+      }
+      if (!document.getElementById('month-tx-list')) {
+        const h = document.createElement('h3'); h.textContent='Récapitulatif'; root.appendChild(h);
+        const ctr = document.createElement('div');
+        ctr.innerHTML = `
+        <button id="month-sort-btn" title="Changer tri"><i id="month-sort-icon" class="fa-solid fa-calendar-day"></i></button>
+        <label style="margin-left:8px;"><input type="checkbox" id="group-by-category"> Grouper par catégorie</label>
+        <ul id="month-tx-list"></ul>
+        `;
+        root.appendChild(ctr);
+      }
+
+      console.warn('[Bootstrap UI] éléments manquants injectés:', missing);
+    }
+
+    // …dans ton init:
+    ensureEssentialDom();
+
+    if (isDropboxConnected() && hasDropboxSDK) {
+      try {
+        dbx = new Dropbox.Dropbox({ accessToken });
+        loadTransactionsDropbox();
+      } catch (e) {
+        console.warn('Dropbox init failed, fallback local:', e);
+        loadTransactionsLocal();
+        updateViews();
+      }
     } else {
+      if (isDropboxConnected() && !hasDropboxSDK) {
+        console.warn('Dropbox token present but SDK missing. Falling back to local.');
+        // Optionnel: on "déconnecte" proprement pour éviter de retomber dedans au prochain chargement
+        accessToken = null;
+        localStorage.removeItem('dropbox_token');
+        updateDropboxStatus?.();
+      }
       loadTransactionsLocal();
       updateViews();
     }
@@ -1444,12 +1633,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Écouteurs pour les services cloud
-    document.getElementById('dropbox-login').addEventListener('click', loginDropbox);
-    document.getElementById('dropbox-logout').addEventListener('click', logoutDropbox);
-    document.getElementById('google-login').addEventListener('click', loginGoogle);
-    document.getElementById('google-logout').addEventListener('click', logoutGoogle);
-    document.getElementById('ms-login').addEventListener('click', loginMS);
-    document.getElementById('ms-logout').addEventListener('click', logoutMS);
+    // 2) Boutons Cloud (tous en ?.)
+    document.getElementById('dropbox-login') ?.addEventListener('click', loginDropbox);
+    document.getElementById('dropbox-logout')?.addEventListener('click', logoutDropbox);
+    document.getElementById('google-login')  ?.addEventListener('click', loginGoogle);
+    document.getElementById('google-logout') ?.addEventListener('click', logoutGoogle);
+    document.getElementById('ms-login')      ?.addEventListener('click', loginMS);
+    document.getElementById('ms-logout')     ?.addEventListener('click', logoutMS);
 
     // Onglets finances
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1525,18 +1715,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Formulaire principal + navigation calendrier
-    document.getElementById('transaction-form').addEventListener('submit', addTransaction);
-    document.getElementById('prev-month').addEventListener('click', () => {
+    // 3) Form principal + nav calendrier (tous en ?.)
+    document.getElementById('transaction-form')?.addEventListener('submit', addTransaction);
+    document.getElementById('prev-month')      ?.addEventListener('click', () => {
       currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
       renderCalendar();
       renderMonthSummary();
     });
-    document.getElementById('next-month').addEventListener('click', () => {
+    document.getElementById('next-month')      ?.addEventListener('click', () => {
       currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
       renderCalendar();
       renderMonthSummary();
     });
-    document.getElementById('go-today').addEventListener('click', () => {
+    document.getElementById('go-today')        ?.addEventListener('click', () => {
       currentMonth = new Date();
       updateViews();
     });
@@ -1966,7 +2157,7 @@ function initCategoryPickerSafe(cfg) {
 
   // si un indispensable manque, on sort proprement
   if (!elInput || !elPreview || !elDropdown || !elIcons) {
-    console.warn('CategoryPicker: éléments manquants pour', cfg);
+    // (silence) console.warn('CategoryPicker: éléments manquants pour', cfg);
     return;
   }
 
@@ -2128,138 +2319,240 @@ icons:    'edit-cp-icons'
 });
 */
 
-  /* ============ Icon Picker V2 — Bottom sheet (autonome) ============ */
-  document.addEventListener('DOMContentLoaded', () => {
-    const SHEET  = document.getElementById('icon-sheet');
-    if (!SHEET) return; // rien à faire si le markup n’est pas là
-    const PANEL  = SHEET.querySelector('.sheet__panel');
-    const GRID   = document.getElementById('ip-grid');
-    const CHIPS  = document.getElementById('ip-chips');
-    const SEARCH = document.getElementById('ip-search');
-    const BTN_CLOSE    = SHEET.querySelector('.sheet__close');
-    const BTN_CANCEL   = document.getElementById('ip-cancel');
-    const BTN_VALIDATE = document.getElementById('ip-validate');
+// Pont universel : ouvre la feuille d’icônes si présente
+document.addEventListener('click', (e) => {
+  const trg = e.target.closest('.cat-trigger');
+  if (!trg) return;
+  e.preventDefault(); e.stopPropagation();
+  const inputId   = trg.dataset.targetInput  || 'category';
+  const previewId = trg.dataset.targetPreview || 'selected-category';
+  if (typeof window.__openIconSheet === 'function') {
+    window.__openIconSheet(inputId, previewId);
+  } else {
+    // fallback très simple si la sheet n’est pas chargée
+    const dd = trg.closest('.category-picker, .category-picker-v2')?.querySelector('.category-dropdown');
+    if (dd) dd.style.display = getComputedStyle(dd).display === 'none' ? 'block' : 'none';
+  }
+});
 
-    // Petit catalogue pour la démo (ajoute/retire librement)
-    const ICONS = {
-      "Récents": [],
-      "Essentiels": [
-        "fa-solid fa-utensils","fa-solid fa-cart-shopping","fa-solid fa-gas-pump",
-        "fa-solid fa-bus","fa-solid fa-sack-dollar","fa-solid fa-gift"
-      ],
-      "Logement": ["fa-solid fa-house","fa-solid fa-bolt","fa-solid fa-fire","fa-solid fa-droplet"],
-      "Transport": ["fa-solid fa-car","fa-solid fa-motorcycle","fa-solid fa-train-subway","fa-solid fa-plane"],
-      "Vie quotidienne": ["fa-solid fa-bread-slice","fa-solid fa-shirt","fa-solid fa-basket-shopping"],
-      "Santé": ["fa-solid fa-briefcase-medical","fa-solid fa-capsules","fa-solid fa-tooth"],
-      "Télécom": ["fa-solid fa-wifi","fa-solid fa-mobile-screen","fa-solid fa-phone"],
-      "Loisirs": ["fa-solid fa-futbol","fa-solid fa-music","fa-solid fa-gamepad","fa-solid fa-film"],
-      "Animaux": ["fa-solid fa-paw","fa-solid fa-bone"],
-      "Travail/Études": ["fa-solid fa-briefcase","fa-solid fa-graduation-cap"],
-      "Autres": ["fa-regular fa-circle-question","fa-solid fa-ellipsis"]
-    };
+// === IconPickerV2 — autonome (ouvre + sélection + valider/annuler/fermer) ===
+(function(){
+  const SHEET = document.getElementById('icon-sheet');
+  if (!SHEET) return;
 
-    const RECENTS_KEY = 'ip.recents';
-    const loadRecents = () => JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
-    const saveRecents = (arr) => localStorage.setItem(RECENTS_KEY, JSON.stringify(arr.slice(0,12)));
+  // Toujours sous <body> (évite les parents en display:none)
+  if (SHEET.parentElement !== document.body) {
+    document.body.appendChild(SHEET);
+  }
 
-    let state = { icon:null, targetInput:null, targetPreview:null, category:'Essentiels' };
+  // Refs
+  const PANEL  = SHEET.querySelector('.sheet__panel');
+  const GRID   = document.getElementById('ip-grid');
+  const CHIPS  = document.getElementById('ip-chips');
+  const SEARCH = document.getElementById('ip-search');
+  const BTN_CLOSE    = SHEET.querySelector('.sheet__close');
+  const BTN_CANCEL   = document.getElementById('ip-cancel');
+  const BTN_VALIDATE = document.getElementById('ip-validate');
 
-    function openSheet(inputId, previewId){
-      state.targetInput  = document.getElementById(inputId);
-      state.targetPreview= document.getElementById(previewId);
-      state.icon = state.targetInput?.value || null;
+  // Jeu d'icônes
+  const ICONS = {
+    "Récents": [],
+    "Essentiels": [
+      "fa-solid fa-utensils","fa-solid fa-cart-shopping","fa-solid fa-gas-pump",
+      "fa-solid fa-bus","fa-solid fa-sack-dollar","fa-solid fa-gift"
+    ],
+    "Logement": ["fa-solid fa-house","fa-solid fa-bolt","fa-solid fa-fire","fa-solid fa-droplet"],
+    "Transport": ["fa-solid fa-car","fa-solid fa-motorcycle","fa-solid fa-train-subway","fa-solid fa-plane"],
+    "Vie quotidienne": ["fa-solid fa-bread-slice","fa-solid fa-shirt","fa-solid fa-basket-shopping"],
+    "Santé": ["fa-solid fa-briefcase-medical","fa-solid fa-capsules","fa-solid fa-tooth"],
+    "Télécom": ["fa-solid fa-wifi","fa-solid fa-mobile-screen-button","fa-solid fa-phone"],
+    "Loisirs": ["fa-solid fa-futbol","fa-solid fa-music","fa-solid fa-gamepad","fa-solid fa-film"],
+    "Animaux": ["fa-solid fa-paw","fa-solid fa-bone"],
+    "Travail/Études": ["fa-solid fa-briefcase","fa-solid fa-graduation-cap"],
+    "Autres": ["fa-regular fa-circle-question","fa-solid fa-ellipsis"]
+  };
+  const RECENTS_KEY = 'ip.recents';
+  const loadRecents = () => JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
+  const saveRecents = (arr) => localStorage.setItem(RECENTS_KEY, JSON.stringify(arr.slice(0,12)));
 
-      ICONS["Récents"] = loadRecents();
+  const state = { icon:null, targetInput:null, targetPreview:null, category:'Essentiels' };
 
-      renderChips();
-      renderGrid();
-      if (BTN_VALIDATE) BTN_VALIDATE.disabled = !state.icon;
+  function openSheet(inputId, previewId){
+    state.targetInput   = document.getElementById(inputId);
+    state.targetPreview = document.getElementById(previewId);
+    state.icon = state.targetInput?.value || null;
 
-      SHEET.classList.add('is-open');
-      SHEET.setAttribute('aria-hidden','false');
-      setTimeout(() => PANEL?.focus(), 0);
+    ICONS["Récents"] = loadRecents();
+    renderChips();
+    renderGrid();
+
+    // (ré)initialise Valider
+    if (BTN_VALIDATE) {
+      BTN_VALIDATE.disabled = !state.icon;
+      if (!state.icon) BTN_VALIDATE.setAttribute('aria-disabled','true');
+      else BTN_VALIDATE.removeAttribute('aria-disabled');
     }
 
-    function closeSheet(){
-      SHEET.classList.remove('is-open');
-      SHEET.setAttribute('aria-hidden','true');
-      if (SEARCH) SEARCH.value = '';
-    }
+    // Ouvre visuellement
+    SHEET.classList.add('is-open');
+    SHEET.setAttribute('aria-hidden','false');
+    if (PANEL) PANEL.style.transform = 'translateY(0)';
+    setTimeout(()=> SEARCH?.focus(), 0);
+  }
 
-    function renderChips(){
-      if (!CHIPS) return;
-      CHIPS.innerHTML = '';
-      Object.keys(ICONS).forEach(cat => {
-        if (cat === 'Récents' && ICONS['Récents'].length === 0) return;
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'cp-chip' + (cat === state.category ? ' active' : '');
-        b.textContent = cat;
-        b.addEventListener('click', () => { state.category = cat; renderGrid();
-          CHIPS.querySelectorAll('.cp-chip').forEach(x=>x.classList.remove('active')); b.classList.add('active'); });
-        CHIPS.appendChild(b);
+  function closeSheet(){
+    SHEET.classList.remove('is-open');
+    SHEET.setAttribute('aria-hidden','true');
+    SHEET.style.display = 'none';         // ⬅️ indispensable pour annuler le display:block mis à l’ouverture
+    if (PANEL) PANEL.style.transform = ''; // (facultatif) reset
+  }
+
+  function renderChips(){
+    if (!CHIPS) return;
+    CHIPS.innerHTML = '';
+    Object.keys(ICONS).forEach(cat => {
+      if (cat === 'Récents' && ICONS['Récents'].length === 0) return;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cp-chip' + (cat === state.category ? ' active' : '');
+      b.textContent = cat;
+      b.addEventListener('click', () => {
+        state.category = cat;
+        CHIPS.querySelectorAll('.cp-chip').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        renderGrid();
       });
-    }
-
-    function renderGrid(){
-      if (!GRID) return;
-      const q = (SEARCH?.value || '').trim().toLowerCase();
-      const base = state.category ? ICONS[state.category] : Object.values(ICONS).flat();
-      const list = q ? base.filter(c => c.toLowerCase().includes(q)) : base;
-
-      GRID.innerHTML = '';
-      list.forEach(cls => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'ip-icon' + (cls === state.icon ? ' is-selected' : '');
-        btn.innerHTML = `<i class="${cls}"></i>`;
-        btn.addEventListener('click', () => {
-          state.icon = cls;
-          GRID.querySelectorAll('.ip-icon').forEach(x=>x.classList.remove('is-selected'));
-          btn.classList.add('is-selected');
-          if (BTN_VALIDATE) BTN_VALIDATE.disabled = false;
-        });
-          GRID.appendChild(btn);
-      });
-      if (list.length === 0){
-        GRID.innerHTML = `<div style="grid-column:1/-1;opacity:.7;text-align:center;">Aucun résultat…</div>`;
-      }
-    }
-
-    function applySelection(){
-      if (!state.icon || !state.targetInput || !state.targetPreview) return;
-      state.targetInput.value = state.icon;
-      state.targetPreview.innerHTML = `<i class="${state.icon}"></i>`;
-
-      const r = loadRecents();
-      const i = r.indexOf(state.icon);
-      if (i !== -1) r.splice(i,1);
-      r.unshift(state.icon);
-      saveRecents(r);
-
-      closeSheet();
-    }
-
-    // Écoutes
-    document.addEventListener('click', (e) => {
-      const trig = e.target.closest('.cat-trigger');
-      if (trig){
-        openSheet(trig.dataset.targetInput, trig.dataset.targetPreview);
-      }
+      CHIPS.appendChild(b);
     });
-    SHEET.addEventListener('click', (e) => {
-      if ((e.target).classList?.contains('sheet__backdrop')) closeSheet();
-    });
-      document.addEventListener('keydown', (e)=>{ if (SHEET.classList.contains('is-open') && e.key==='Escape') closeSheet(); });
-      SEARCH?.addEventListener('input', renderGrid);
-      BTN_CLOSE?.addEventListener('click', closeSheet);
-      BTN_CANCEL?.addEventListener('click', closeSheet);
-      BTN_VALIDATE?.addEventListener('click', applySelection);
+  }
 
-      // Afficher une icône déjà enregistrée au chargement
-      document.querySelectorAll('.cat-trigger').forEach(btn => {
-        const input = document.getElementById(btn.dataset.targetInput);
-        const preview = document.getElementById(btn.dataset.targetPreview);
-        if (input?.value) preview.innerHTML = `<i class="${input.value}"></i>`;
+  function renderGrid(){
+    if (!GRID) return;
+    const q = (SEARCH?.value || '').trim().toLowerCase();
+    const base = state.category ? ICONS[state.category] : Object.values(ICONS).flat();
+    const list = q ? base.filter(c => c.toLowerCase().includes(q)) : base;
+
+    GRID.innerHTML = '';
+    list.forEach(cls => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ip-icon' + (cls === state.icon ? ' is-selected' : '');
+      btn.innerHTML = `<i class="${cls}"></i>`;
+      btn.addEventListener('click', () => {
+        state.icon = cls;
+        GRID.querySelectorAll('.ip-icon').forEach(x=>x.classList.remove('is-selected'));
+        btn.classList.add('is-selected');
+        if (BTN_VALIDATE) {
+          BTN_VALIDATE.disabled = false;            // <- débloque vraiment
+          BTN_VALIDATE.removeAttribute('disabled'); // <- au cas où
+          BTN_VALIDATE.removeAttribute('aria-disabled');
+        }
       });
+      GRID.appendChild(btn);
+    });
+
+    if (!list.length) {
+      GRID.innerHTML = `<div style="grid-column:1/-1;opacity:.7;text-align:center;">Aucun résultat…</div>`;
+    }
+  }
+
+  function applySelection(){
+    if (!state.icon || !state.targetInput || !state.targetPreview) return;
+    state.targetInput.value = state.icon;
+    state.targetPreview.innerHTML = `<i class="${state.icon}"></i>`;
+
+    const r = loadRecents();
+    const i = r.indexOf(state.icon);
+    if (i !== -1) r.splice(i,1);
+    r.unshift(state.icon);
+    saveRecents(r);
+
+    closeSheet();
+  }
+
+  // 👉 Écouteurs des boutons (capture = true pour passer avant tout autre code)
+  BTN_CLOSE    && BTN_CLOSE.addEventListener('click',  (e)=>{ e.preventDefault(); e.stopPropagation(); closeSheet(); }, true);
+  BTN_CANCEL   && BTN_CANCEL.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); closeSheet(); }, true);
+  BTN_VALIDATE && BTN_VALIDATE.addEventListener('click',(e)=>{ e.preventDefault(); e.stopPropagation(); if(!state.icon) return; applySelection(); }, true);
+
+  // Expose pour test console
+  window.__openIconSheet = openSheet;
+
+  // === Délégation des clics (garantie de capture des boutons) ===
+  document.addEventListener('click', (e) => {
+    // Ouvrir depuis n'importe quel .cat-trigger
+    const trigger = e.target.closest('.cat-trigger');
+    if (trigger) {
+      e.preventDefault();
+      openSheet(trigger.dataset.targetInput, trigger.dataset.targetPreview);
+      return;
+    }
   });
+
+  SHEET.addEventListener('click', (e) => {
+    // Fermer via backdrop
+    if (e.target.classList && e.target.classList.contains('sheet__backdrop')) {
+      e.preventDefault(); closeSheet(); return;
+    }
+    // Fermer via croix
+    const cross = e.target.closest('.sheet__close');
+    if (cross) { e.preventDefault(); closeSheet(); return; }
+
+    // Annuler
+    const cancel = e.target.closest('#ip-cancel');
+    if (cancel) { e.preventDefault(); closeSheet(); return; }
+
+    // Valider (fonctionne même si l'attribut disabled traîne)
+    const validate = e.target.closest('#ip-validate');
+    if (validate) {
+      e.preventDefault();
+      if (!state.icon) return;
+      applySelection();
+    }
+  });
+
+  // Recherche
+  SEARCH && SEARCH.addEventListener('input', renderGrid);
+
+  // Accessibilité: Enter sur un bouton sélectionné -> valider
+  SHEET.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && SHEET.classList.contains('is-open')) {
+      if (state.icon) { e.preventDefault(); applySelection(); }
+    }
+    if (e.key === 'Escape' && SHEET.classList.contains('is-open')) {
+      e.preventDefault(); closeSheet();
+    }
+  });
+
+  window.__closeIconSheet = closeSheet;
+  window.__applyIconSelection = applySelection;
+
+  // Sync preview si une valeur existe déjà
+  document.querySelectorAll('.cat-trigger').forEach(btn => {
+    const input = document.getElementById(btn.dataset.targetInput);
+    const preview = document.getElementById(btn.dataset.targetPreview);
+    if (input?.value) preview.innerHTML = `<i class="${input.value}"></i>`;
+  });
+
+  console.log('[IconPickerV2] prêt. triggers =', document.querySelectorAll('.cat-trigger').length);
+})();
+
+// Filet de sécurité global (prioritaire) pour les boutons de la feuille d'icônes
+document.addEventListener('click', function(e){
+  const closeBtn = e.target.closest('.sheet__close');
+  const cancelBtn = e.target.closest('#ip-cancel');
+  const validateBtn = e.target.closest('#ip-validate');
+
+  if (!closeBtn && !cancelBtn && !validateBtn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (closeBtn || cancelBtn) {
+    window.__closeIconSheet && window.__closeIconSheet();
+    return;
+  }
+  if (validateBtn) {
+    window.__applyIconSelection && window.__applyIconSelection();
+  }
+}, true); // <-- "true" = priorité maximale
