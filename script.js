@@ -102,18 +102,159 @@ function saveTransactionsLocal() {
   localStorage.setItem('transactions', JSON.stringify(transactions));
 }
 
-// ====== Catégories / couleurs / icônes ======
-const CATEGORY_COLORS = {
-  "logement": "#90caf9",
-  "alimentation": "#ffcc80",
-  "transport": "#a5d6a7",
-  "loisirs": "#ce93d8",
-  "santé": "#f48fb1",
-  "abonnements": "#80cbc4",
-  "animaux": "#e6ee9c",
-  "cadeaux": "#ffe082",
-  "autre": "#b0bec5"
-};
+// ====== Stockage : abstraction (Local, Dossier, Dropbox) ======
+const STORAGE_MODE_KEY = 'storage_mode';
+const STORAGE_MODES = { LOCAL:'local', FOLDER:'folder', DROPBOX:'dropbox', GOOGLE:'google', ONEDRIVE:'onedrive' };
+
+// Handles pour le mode "Dossier local" (File System Access)
+let __folderDirHandle = null;
+let __folderFileHandle = null;
+
+function getStorageMode() {
+  return localStorage.getItem(STORAGE_MODE_KEY) || STORAGE_MODES.LOCAL;
+}
+function setStorageModeLocalValue(mode) {
+  localStorage.setItem(STORAGE_MODE_KEY, mode);
+  // coche les radios si présentes
+  try {
+    const el = document.querySelector(`input[name="storage-mode"][value="${mode}"]`);
+    if (el) el.checked = true;
+  } catch(_) {}
+}
+
+function isFsaSupported() {
+  return typeof window.showDirectoryPicker === 'function';
+}
+
+function loadTransactionsLocal() {
+  const raw = localStorage.getItem('transactions');
+  transactions = raw ? JSON.parse(raw) : [];
+}
+function saveTransactionsLocal() {
+  localStorage.setItem('transactions', JSON.stringify(transactions));
+}
+
+async function ensureFolderFile() {
+  if (!isFsaSupported()) throw new Error('File System Access non supporté');
+  if (!__folderDirHandle) {
+    __folderDirHandle = await window.showDirectoryPicker();
+  }
+  // Sous-dossier "AssistantPersonnel"
+  const appDir = await __folderDirHandle.getDirectoryHandle('AssistantPersonnel', { create: true });
+  __folderFileHandle = await appDir.getFileHandle('transactions.json', { create: true });
+
+  const opts = { mode: 'readwrite' };
+  if (await __folderFileHandle.queryPermission(opts) !== 'granted') {
+    const p = await __folderFileHandle.requestPermission(opts);
+    if (p !== 'granted') throw new Error('Permission refusée');
+  }
+}
+
+async function loadTransactionsFolder() {
+  await ensureFolderFile();
+  const file = await __folderFileHandle.getFile();
+  const text = await file.text().catch(()=>'[]');
+  try {
+    transactions = text?.trim() ? JSON.parse(text) : [];
+  } catch {
+    transactions = [];
+  }
+  // on garde aussi une copie locale pour le cache/offline
+  saveTransactionsLocal();
+}
+
+async function saveTransactionsFolder() {
+  await ensureFolderFile();
+  const writable = await __folderFileHandle.createWritable();
+  await writable.write(new Blob([JSON.stringify(transactions, null, 2)], { type: 'application/json' }));
+  await writable.close();
+  // copie locale pour offline
+  saveTransactionsLocal();
+}
+
+// Charge selon le mode sélectionné (avec fallback)
+async function loadTransactions() {
+  const mode = getStorageMode();
+
+  if (mode === STORAGE_MODES.DROPBOX && typeof isDropboxConnected === 'function' && isDropboxConnected() && window.Dropbox && Dropbox.Dropbox) {
+    try {
+      dbx = new Dropbox.Dropbox({ accessToken });
+      await loadTransactionsDropbox();
+      return;
+    } catch (e) {
+      console.warn('[Storage] Dropbox KO → fallback local:', e);
+    }
+  }
+  if (mode === STORAGE_MODES.FOLDER && isFsaSupported()) {
+    try {
+      await loadTransactionsFolder();
+      return;
+    } catch (e) {
+      console.warn('[Storage] Dossier local KO → fallback local:', e);
+    }
+  }
+
+  // Fallback
+  loadTransactionsLocal();
+}
+
+async function persistTransactions() {
+  const mode = getStorageMode();
+
+  if (mode === STORAGE_MODES.DROPBOX && typeof isDropboxConnected === 'function' && isDropboxConnected()) {
+    await saveTransactionsDropbox().catch(e => {
+      console.warn('[Storage] save Dropbox KO → copie locale seulement', e);
+      saveTransactionsLocal();
+    });
+    return;
+  }
+  if (mode === STORAGE_MODES.FOLDER && isFsaSupported()) {
+    await saveTransactionsFolder().catch(e => {
+      console.warn('[Storage] save dossier KO → copie locale seulement', e);
+      saveTransactionsLocal();
+    });
+    return;
+  }
+
+  // Local par défaut
+  saveTransactionsLocal();
+}
+
+// UI : radios + bouton choisir dossier
+function renderStorageModeUI() {
+  const hint = document.getElementById('storage-hint');
+  const folderRadio = document.getElementById('mode-folder');
+  const folderBtn   = document.getElementById('pick-folder-btn');
+
+  // activer/désactiver "Dossier local" si non supporté
+  if (folderRadio) {
+    const ok = isFsaSupported();
+    folderRadio.disabled = !ok;
+    folderBtn.style.display = ok ? '' : 'none';
+    if (!ok && getStorageMode() === STORAGE_MODES.FOLDER) {
+      setStorageModeLocalValue(STORAGE_MODES.LOCAL);
+    }
+  }
+
+  // état visuel du choix
+  const mode = getStorageMode();
+  const el = document.querySelector(`input[name="storage-mode"][value="${mode}"]`);
+  if (el) el.checked = true;
+
+  // message d’aide
+  if (hint) {
+    if (mode === STORAGE_MODES.LOCAL) {
+      hint.textContent = "Stockage dans le navigateur (persistant si possible).";
+    } else if (mode === STORAGE_MODES.FOLDER) {
+      hint.textContent = "Le fichier sera créé dans : [dossier]/AssistantPersonnel/transactions.json";
+    } else if (mode === STORAGE_MODES.DROPBOX) {
+      hint.textContent = "Utilise l’app-folder Dropbox (scope minimal).";
+    } else {
+      hint.textContent = "";
+    }
+  }
+}
+
 const DEFAULT_CATEGORY = "autre";
 
 // ====== Jours fériés FR (année courante + adjacentes) ======
@@ -209,7 +350,11 @@ function logoutDropbox() {
   accessToken = null;
   localStorage.removeItem('dropbox_token');
   updateDropboxStatus();
-  // On repasse en local uniquement
+
+  // repasse en Local
+  setStorageModeLocalValue('local');
+  renderStorageModeUI();
+
   loadTransactionsLocal();
   updateViews();
 }
@@ -1293,48 +1438,59 @@ function renderMonthSummary() {
 }
 
 // ====== Formulaires ======
-function addTransaction(ev) {
+async function addTransaction(ev) {
   ev.preventDefault();
   const type = document.getElementById('type').value;
-  const category = document.getElementById('category').value || DEFAULT_CATEGORY;
+  const category = document.getElementById('category').value || (typeof DEFAULT_CATEGORY !== 'undefined' ? DEFAULT_CATEGORY : 'Autre');
   const description = document.getElementById('description').value.trim();
   const amount = Number(document.getElementById('amount').value);
-  const dateISO = readDateInput('date');
-  const recurrence = document.getElementById('recurrence').value;
-  const untilISO = readDateInput('recurrence-end'); // ⬅️ nouveau
+  const dateISO = typeof readDateInput === 'function' ? readDateInput('date') : (document.getElementById('date').value || '').trim();
+  const recurrence = document.getElementById('recurrence')?.value || 'none';
+  const untilISO = typeof readDateInput === 'function' ? readDateInput('recurrence-end') : (document.getElementById('recurrence-end')?.value || '').trim();
   const installmentsEl = document.getElementById('installments');
   const installments = installmentsEl ? Number(installmentsEl.value || 0) : 0;
-
-  // “appliquer aux mois antérieurs” (virtuel, pas de duplication)
   const applyPrev = document.getElementById('apply-previous')?.checked || false;
 
-  if (!description || !dateISO || Number.isNaN(amount)) {
-    alert('Merci de remplir correctement le formulaire.');
-    return;
-  }
+  if (!description || !amount || !dateISO) return;
 
   const tx = {
-    id: crypto.randomUUID(),
-    type, category, description, amount,
-    date: dateISO,
-    recurrence: recurrence || 'none',
-    applyPrev: applyPrev || false
+    id: (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+    type, category, description,
+    amount, date: dateISO,
+    recurrence, applyPrev
   };
+  if (recurrence === 'installments' && installments > 1) tx.installments = installments;
+  if (recurrence !== 'none' && untilISO) tx.until = untilISO;
 
-  if (untilISO) tx.until = untilISO;
-  if (tx.recurrence === 'installments' && installments >= 2) {
-    tx.installments = installments;
+  // Ajoute la transaction en mémoire
+  if (!Array.isArray(window.transactions)) window.transactions = [];
+  window.transactions.push(tx);
+
+  // Sauvegarde prioritaire : dossier local (si choisi) > Dropbox (si connecté) > Local navigateur
+  try {
+    if (window.__folderDirHandle && typeof saveTransactionsFolder === 'function') {
+      await saveTransactionsFolder();
+    } else if (typeof isDropboxConnected === 'function' && isDropboxConnected() && typeof saveTransactionsDropbox === 'function') {
+      await saveTransactionsDropbox();
+    } else if (typeof saveTransactionsLocal === 'function') {
+      saveTransactionsLocal();
+    } else {
+      // fallback minimaliste
+      localStorage.setItem('transactions', JSON.stringify(window.transactions));
+    }
+  } catch (e) {
+    console.warn('[persist] échec principal → copie locale', e);
+    try { localStorage.setItem('transactions', JSON.stringify(window.transactions)); } catch(_) {}
   }
 
-  transactions.push(tx);
-  saveTransactionsLocal();
-  if (isDropboxConnected()) saveTransactionsDropbox();
-  updateViews();
+  // Rafraîchit l’UI
+  if (typeof updateViews === 'function') updateViews();
 
-  ev.target.reset();
-  document.getElementById('apply-previous-row').style.display = 'none';
-  document.getElementById('recurrence-end-row').style.display = 'none';
-  document.getElementById('installments-row').style.display = 'none';
+  // Reset du formulaire
+  ev.target.reset?.();
+  const ap = document.getElementById('apply-previous-row'); if (ap) ap.style.display = 'none';
+  const re = document.getElementById('recurrence-end-row'); if (re) re.style.display = 'none';
+  const ins = document.getElementById('installments-row'); if (ins) ins.style.display = 'none';
 }
 
 function openEditModal(tx) {
@@ -1699,33 +1855,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // …dans ton init:
-    ensureEssentialDom();
+ensureEssentialDom();
 
-    if (isDropboxConnected() && hasDropboxSDK) {
-      try {
-        dbx = new Dropbox.Dropbox({ accessToken });
-        loadTransactionsDropbox();
-      } catch (e) {
-        console.warn('Dropbox init failed, fallback local:', e);
-        loadTransactionsLocal();
-        updateViews();
-      }
-    } else {
-      if (isDropboxConnected() && !hasDropboxSDK) {
-        console.warn('Dropbox token present but SDK missing. Falling back to local.');
-        // Optionnel: on "déconnecte" proprement pour éviter de retomber dedans au prochain chargement
-        accessToken = null;
-        localStorage.removeItem('dropbox_token');
-        updateDropboxStatus?.();
-      }
-      loadTransactionsLocal();
-      updateViews();
+(async () => {
+  let loaded = false;
+
+  try {
+    // 1) On tente de restaurer le dossier choisi (si permission toujours OK)
+    if (await restoreFolderHandles()) {
+      await loadTransactionsFolder();
+      loaded = true;
     }
 
-    updateDropboxStatus();
-    updateGoogleStatus();
-    updateMSStatus();
-    __attachDatePickers();
+    // 2) Sinon Dropbox si dispo et connecté
+    if (!loaded && typeof isDropboxConnected === 'function' && isDropboxConnected() && typeof loadTransactionsDropbox === 'function') {
+      await loadTransactionsDropbox();
+      loaded = true;
+    }
+
+    // 3) Sinon, Local navigateur
+    if (!loaded) {
+      try {
+        const raw = localStorage.getItem('transactions');
+        window.transactions = raw ? JSON.parse(raw) : [];
+      } catch {
+        window.transactions = [];
+      }
+    }
+  } catch (e) {
+    console.warn('Initial load failed → fallback local', e);
+    try {
+      const raw = localStorage.getItem('transactions');
+      window.transactions = raw ? JSON.parse(raw) : [];
+    } catch {
+      window.transactions = [];
+    }
+  }
+
+  if (typeof updateViews === 'function') updateViews();
+
+  // Statuts services
+  if (typeof updateFolderStatus  === 'function') updateFolderStatus();
+  if (typeof updateDropboxStatus === 'function') updateDropboxStatus();
+  if (typeof updateGoogleStatus  === 'function') updateGoogleStatus();
+  if (typeof updateMSStatus      === 'function') updateMSStatus();
+
+  if (typeof __attachDatePickers === 'function') __attachDatePickers();
+})();
 
     // Pickers catégories — SAFE
     initCategoryPickerSafe({
@@ -1770,14 +1946,247 @@ document.addEventListener('DOMContentLoaded', () => {
       updateLegendSwatches(); // <- rafraîchir juste l’affichage des pastilles
     });
 
-    // Écouteurs pour les services cloud
-    // 2) Boutons Cloud (tous en ?.)
-    document.getElementById('dropbox-login') ?.addEventListener('click', loginDropbox);
-    document.getElementById('dropbox-logout')?.addEventListener('click', logoutDropbox);
-    document.getElementById('google-login')  ?.addEventListener('click', loginGoogle);
-    document.getElementById('google-logout') ?.addEventListener('click', logoutGoogle);
-    document.getElementById('ms-login')      ?.addEventListener('click', loginMS);
-    document.getElementById('ms-logout')     ?.addEventListener('click', logoutMS);
+    // Écouteurs pour les services cloud + stockage
+// === Helpers Dossier local (File System Access) ===
+function isFsaSupported() {
+  return typeof window.showDirectoryPicker === 'function';
+}
+
+// --- IndexedDB minimal pour stocker les handles FSA (persistance après reload)
+const FSA_DB_NAME = 'fsa-handles';
+const FSA_STORE   = 'kv';
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(FSA_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(FSA_STORE)) db.createObjectStore(FSA_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+function idbGet(key) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FSA_STORE, 'readonly');
+    const st = tx.objectStore(FSA_STORE);
+    const r = st.get(key);
+    r.onsuccess = () => resolve(r.result ?? null);
+    r.onerror   = () => reject(r.error);
+  }));
+}
+function idbSet(key, val) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FSA_STORE, 'readwrite');
+    const st = tx.objectStore(FSA_STORE);
+    const r = st.put(val, key);
+    r.onsuccess = () => resolve();
+    r.onerror   = () => reject(r.error);
+  }));
+}
+function idbDel(key) {
+  return idbOpen().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(FSA_STORE, 'readwrite');
+    const st = tx.objectStore(FSA_STORE);
+    const r = st.delete(key);
+    r.onsuccess = () => resolve();
+    r.onerror   = () => reject(r.error);
+  }));
+}
+
+// Handles globaux FSA
+window.__folderDirHandle  = window.__folderDirHandle  || null;
+window.__folderFileHandle = window.__folderFileHandle || null;
+
+async function ensureFolderFile() {
+  if (!isFsaSupported()) throw new Error('File System Access non supporté par ce navigateur');
+
+  if (!window.__folderDirHandle) {
+    window.__folderDirHandle = await window.showDirectoryPicker();
+  }
+  const appDir = await window.__folderDirHandle.getDirectoryHandle('AssistantPersonnel', { create: true });
+  window.__folderFileHandle = await appDir.getFileHandle('transactions.json', { create: true });
+
+  // Permission lecture/écriture
+  const permQuery = await window.__folderFileHandle.queryPermission({ mode: 'readwrite' });
+  if (permQuery !== 'granted') {
+    const perm = await window.__folderFileHandle.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') throw new Error('Permission refusée');
+  }
+
+  // Persiste les handles (pour retrouver le dossier au prochain chargement)
+  try {
+    await idbSet('dir',  window.__folderDirHandle);
+    await idbSet('file', window.__folderFileHandle);
+  } catch (e) {
+    console.warn('[FSA] impossible de persister les handles IDB (non bloquant)', e);
+  }
+}
+
+async function restoreFolderHandles() {
+  if (!isFsaSupported()) return false;
+  try {
+    const dir  = await idbGet('dir');
+    const file = await idbGet('file');
+    if (!dir || !file) return false;
+
+    window.__folderDirHandle  = dir;
+    window.__folderFileHandle = file;
+
+    const perm = await window.__folderFileHandle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') return true;
+    if (perm === 'prompt') {
+      const p = await window.__folderFileHandle.requestPermission({ mode: 'readwrite' });
+      return p === 'granted';
+    }
+    return false;
+  } catch (e) {
+    console.warn('[FSA] restore handles échoué', e);
+    return false;
+  }
+}
+
+async function loadTransactionsFolder() {
+  await ensureFolderFile();
+  const file = await window.__folderFileHandle.getFile();
+  const text = await file.text().catch(() => '[]');
+  try {
+    window.transactions = text.trim() ? JSON.parse(text) : [];
+  } catch {
+    window.transactions = [];
+  }
+  try { localStorage.setItem('transactions', JSON.stringify(window.transactions)); } catch(_) {}
+}
+
+async function saveTransactionsFolder() {
+  await ensureFolderFile();
+  const writable = await window.__folderFileHandle.createWritable();
+  await writable.write(new Blob([JSON.stringify(window.transactions, null, 2)], { type: 'application/json' }));
+  await writable.close();
+  try { localStorage.setItem('transactions', JSON.stringify(window.transactions)); } catch(_) {}
+}
+
+function updateFolderStatus() {
+  const st = document.getElementById('folder-status');
+  const clearBtn = document.getElementById('clear-folder-btn');
+  if (!st) return;
+
+  if (!isFsaSupported()) {
+    st.textContent = 'Non supporté par ce navigateur';
+    if (clearBtn) clearBtn.style.display = 'none';
+    return;
+  }
+  if (window.__folderDirHandle) {
+    st.textContent = 'Connecté';
+    if (clearBtn) clearBtn.style.display = '';
+  } else {
+    st.textContent = 'Non configuré';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
+}
+
+// === Écouteurs pour les services cloud + dossier local ===
+document.getElementById('dropbox-login') ?.addEventListener('click', loginDropbox);
+document.getElementById('dropbox-logout')?.addEventListener('click', logoutDropbox);
+document.getElementById('google-login')  ?.addEventListener('click', loginGoogle);
+document.getElementById('google-logout') ?.addEventListener('click', logoutGoogle);
+document.getElementById('ms-login')      ?.addEventListener('click', loginMS);
+document.getElementById('ms-logout')     ?.addEventListener('click', logoutMS);
+
+// Dossier local : choisir et charger
+document.getElementById('pick-folder-btn')?.addEventListener('click', async () => {
+  try {
+    await ensureFolderFile();
+    await loadTransactionsFolder();
+    if (typeof updateViews === 'function') updateViews();
+  } catch (e) {
+    console.warn('[FSA] Choix/chargement dossier échoué:', e);
+  } finally {
+    updateFolderStatus();
+  }
+});
+
+// Dossier local : oublier (revient au local navigateur) + supprime handles persistés
+document.getElementById('clear-folder-btn')?.addEventListener('click', async () => {
+  window.__folderDirHandle  = null;
+  window.__folderFileHandle = null;
+  try { await idbDel('dir'); await idbDel('file'); } catch(_) {}
+  updateFolderStatus();
+
+  // Recharge depuis le local navigateur
+  try {
+    const raw = localStorage.getItem('transactions');
+    window.transactions = raw ? JSON.parse(raw) : [];
+  } catch {
+    window.transactions = [];
+  }
+  if (typeof updateViews === 'function') updateViews();
+});
+
+// Met à jour le statut à l’ouverture
+updateFolderStatus();
+
+// Dossier local : oublier (revient au local navigateur)
+document.getElementById('clear-folder-btn')?.addEventListener('click', () => {
+  window.__folderDirHandle = null;
+  window.__folderFileHandle = null;
+  updateFolderStatus();
+  // On recharge depuis le local navigateur
+  try {
+    const raw = localStorage.getItem('transactions');
+    window.transactions = raw ? JSON.parse(raw) : [];
+  } catch {
+    window.transactions = [];
+  }
+  if (typeof updateViews === 'function') updateViews();
+});
+
+// Met à jour le statut à l’ouverture
+updateFolderStatus();
+
+    // Radios du mode de stockage
+    document.querySelectorAll('input[name="storage-mode"]').forEach(r => {
+      r.addEventListener('change', async (e) => {
+        const val = e.target.value;
+        setStorageModeLocalValue(val);
+
+        // si on choisit Dropbox et pas connecté → ouvrir login
+        if (val === 'dropbox' && !(typeof isDropboxConnected==='function' && isDropboxConnected())) {
+          loginDropbox();
+          return;
+        }
+        // si on choisit Dossier local → demander le dossier si pas encore choisi
+        if (val === 'folder' && isFsaSupported()) {
+          try {
+            await ensureFolderFile();
+            document.getElementById('folder-picked')?.style && (document.getElementById('folder-picked').style.display = '');
+          } catch (e) {
+            console.warn('Choix dossier annulé / refusé, retour en local.', e);
+            setStorageModeLocalValue('local');
+          }
+        }
+
+        renderStorageModeUI();
+        await loadTransactions();
+        updateViews();
+      });
+    });
+
+    // Bouton "Choisir…" du dossier local
+    document.getElementById('pick-folder-btn')?.addEventListener('click', async () => {
+      try {
+        await ensureFolderFile();
+        setStorageModeLocalValue('folder');
+        document.getElementById('folder-picked')?.style && (document.getElementById('folder-picked').style.display = '');
+        renderStorageModeUI();
+        await loadTransactions();
+        updateViews();
+      } catch (e) {
+        console.warn('Choix dossier annulé / refusé', e);
+      }
+    });
+
 
     // Onglets finances
     document.querySelectorAll('.tab-btn').forEach(btn => {

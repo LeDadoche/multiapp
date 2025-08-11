@@ -57,101 +57,80 @@
 
 <body>
 <header class="site-header">
-  <!-- En-tête principal de l'application multi‑services -->
+  <!-- En-tête principal de l'application multi-services -->
   <div class="topbar">
     <h1>Assistant personnel</h1>
 
-    <!-- Menu Profil / Réglages -->
-    <div class="profile-menu">
-      <button class="profile-trigger" id="profile-trigger" aria-haspopup="true" aria-expanded="false" title="Profil & Réglages">
+    <!-- Menu Profil / Réglages (UN SEUL BLOC) -->
+    <div class="profile-menu" style="position:fixed; top:12px; right:12px; z-index:5000;">
+      <!-- Bouton d'ouverture du menu profil -->
+      <button class="profile-trigger" id="profileBtn" aria-expanded="false" aria-controls="profileDropdown" title="Profil & Réglages">
         <i class="fa-solid fa-user-gear"></i>
       </button>
 
-      <div class="profile-dropdown" id="profile-dropdown" role="menu" aria-label="Réglages">
-        <div class="menu-section">
-          <div class="menu-title">Apparence</div>
-          <div class="toggle-row" style="justify-content: space-between;">
-            <span>Thème</span>
-            <button
-              id="theme-toggle"
-              class="theme-toggle"
-              aria-label="Basculer le thème sombre"
-              aria-pressed="false"
-              title="Basculer le thème sombre"
-            >
-              <span class="tt-track" aria-hidden="true"></span>
-              <span class="tt-knob" aria-hidden="true">
-                <!-- Icônes SVG pour un rendu net -->
-                <svg class="tt-sun" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle cx="12" cy="12" r="4"></circle>
-                  <g class="rays">
-                    <line x1="12" y1="1"  x2="12" y2="4"></line>
-                    <line x1="12" y1="20" x2="12" y2="23"></line>
-                    <line x1="1"  y1="12" x2="4"  y2="12"></line>
-                    <line x1="20" y1="12" x2="23" y2="12"></line>
-                    <line x1="4.2" y1="4.2"  x2="6.4" y2="6.4"></line>
-                    <line x1="17.6" y1="17.6" x2="19.8" y2="19.8"></line>
-                    <line x1="17.6" y1="6.4"  x2="19.8" y2="4.2"></line>
-                    <line x1="4.2" y1="19.8" x2="6.4" y2="17.6"></line>
-                  </g>
-                </svg>
-                <svg class="tt-moon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M21 13.5A9 9 0 1 1 10.5 3
-                          a7 7 0 0 0 10.5 10.5Z"></path>
-                </svg>
-              </span>
-            </button>
+      <!-- Contenu du menu profil (dropdown) -->
+      <div class="profile-dropdown" id="profileDropdown" role="menu" aria-hidden="true"
+           style="display:none; position:fixed; top:46px; right:12px; z-index:5001;">
+      <div class="menu-section">
+        <div class="menu-title">Cloud & synchronisation</div>
+
+        <!-- Dossier local (File System Access) -->
+        <div class="service-row">
+          <div class="service-head">
+            <i class="fa-solid fa-folder"></i>
+            <span>Dossier local (File System Access)</span>
+            <span class="service-status" id="folder-status">Non configuré</span>
           </div>
-
-        </div>
-
-        <div class="menu-section">
-          <div class="menu-title">Cloud & synchronisation</div>
-
-          <!-- Dropbox -->
-          <div class="service-row">
-            <div class="service-head">
-              <i class="fa-brands fa-dropbox"></i>
-              <span>Dropbox</span>
-              <span class="service-status" id="dropbox-status">…</span>
-            </div>
-            <div class="service-actions">
-              <button id="dropbox-login" class="dropbox-btn">Se connecter</button>
-              <button id="dropbox-logout" class="dropbox-btn" style="display:none;">Se déconnecter</button>
-            </div>
-          </div>
-
-          <!-- Google Drive -->
-          <div class="service-row">
-            <div class="service-head">
-              <i class="fa-brands fa-google-drive"></i>
-              <span>Google Drive</span>
-              <span class="service-status" id="google-status">…</span>
-            </div>
-            <div class="service-actions">
-              <button id="google-login">Se connecter</button>
-              <button id="google-logout" style="display:none;">Se déconnecter</button>
-            </div>
-          </div>
-
-          <!-- Microsoft OneDrive -->
-          <div class="service-row">
-            <div class="service-head">
-              <i class="fa-brands fa-microsoft"></i>
-              <span>Microsoft OneDrive</span>
-              <span class="service-status" id="ms-status">…</span>
-            </div>
-            <div class="service-actions">
-              <button id="ms-login">Se connecter</button>
-              <button id="ms-logout" style="display:none;">Se déconnecter</button>
-            </div>
+          <div class="service-actions">
+            <button id="pick-folder-btn">Choisir le dossier…</button>
+            <button id="clear-folder-btn" style="display:none;">Oublier</button>
           </div>
         </div>
-      </div>
+
+        <!-- Dropbox -->
+        <div class="service-row">
+          <div class="service-head">
+            <i class="fa-brands fa-dropbox"></i>
+            <span>Dropbox</span>
+            <span class="service-status" id="dropbox-status">…</span>
+          </div>
+          <div class="service-actions">
+            <button id="dropbox-login" class="dropbox-btn">Se connecter</button>
+            <button id="dropbox-logout" class="dropbox-btn" style="display:none;">Se déconnecter</button>
+          </div>
+        </div>
+
+        <!-- Google Drive -->
+        <div class="service-row">
+          <div class="service-head">
+            <i class="fa-brands fa-google-drive"></i>
+            <span>Google Drive</span>
+            <span class="service-status" id="google-status">…</span>
+          </div>
+          <div class="service-actions">
+            <button id="google-login">Se connecter</button>
+            <button id="google-logout" style="display:none;">Se déconnecter</button>
+          </div>
+        </div>
+
+        <!-- Microsoft OneDrive -->
+        <div class="service-row">
+          <div class="service-head">
+            <i class="fa-brands fa-microsoft"></i>
+            <span>Microsoft OneDrive</span>
+            <span class="service-status" id="ms-status">…</span>
+          </div>
+          <div class="service-actions">
+            <button id="ms-login">Se connecter</button>
+            <button id="ms-logout" style="display:none;">Se déconnecter</button>
+          </div>
+        </div>
+      </div><!-- /.menu-section -->
+      </div><!-- /.profile-dropdown -->
     </div><!-- /.profile-menu -->
   </div><!-- /.topbar -->
 
-  <!-- Navigation des modules de la multi‑application -->
+  <!-- Navigation des modules de la multi-application -->
   <nav class="app-nav" aria-label="Navigation des modules">
     <button class="app-btn active" data-app="finance"><i class="fa-solid fa-coins"></i> Finance</button>
     <button class="app-btn" data-app="agenda"><i class="fa-solid fa-calendar"></i> Agenda</button>
@@ -161,6 +140,7 @@
     <button class="app-btn" data-app="sante"><i class="fa-solid fa-heart-pulse"></i> Santé</button>
   </nav>
 </header>
+
 
   <main>
     <!-- Section Finances : le contenu existant est encapsulé dans une section dédiée -->
@@ -723,6 +703,30 @@
     </div>
   </div>
 </div>
+
+<script>
+  (function(){
+    const btn = document.getElementById('profileBtn');
+    const dd  = document.getElementById('profileDropdown');
+    if (!btn || !dd) return;
+    btn.addEventListener('click', () => {
+      const open = dd.style.display === 'block';
+      dd.style.display = open ? 'none' : 'block';
+      btn.setAttribute('aria-expanded', String(!open));
+      dd.setAttribute('aria-hidden', String(open));
+    });
+    // Option: fermer au clic hors du menu
+    document.addEventListener('click', (e) => {
+      if (!dd.contains(e.target) && !btn.contains(e.target)) {
+        if (dd.style.display === 'block') {
+          dd.style.display = 'none';
+          btn.setAttribute('aria-expanded', 'false');
+          dd.setAttribute('aria-hidden', 'true');
+        }
+      }
+    });
+  })();
+</script>
 
 <!-- Bouton d'installation -->
 <button id="installBtn" style="display:none;">Installer l’app</button>
