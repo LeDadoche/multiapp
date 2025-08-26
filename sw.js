@@ -1,43 +1,78 @@
-// sw.js
-const CACHE = 'app-cache-v1';
+// sw.js — v3
+// - Fonctionne en sous-dossier (GitHub Pages / localhost)
+// - Cache versionné + nettoyage
+// - NE PAS intercepter les requêtes externes (CDN, API…) → évite les erreurs de police
+// - HTML: network-first (+fallback cache/index)
+// - Assets locaux: cache-first
+
+const CACHE = 'multiapp-cache-v3';
+const ORIGIN = self.location.origin;
+
+// Chemins RELATIFS au dossier d'index.html
 const ASSETS = [
-    '/',               // si tu sers à la racine (sinon '/assistant/index.html' etc.)
-    '/index.html',
-'/style.css',
-'/script.js',
-'/manifest.json',
-'/icons/icon-192.png',
-'/icons/icon-512.png',
+  'index.html',
+'style.css',
+'script.js',
+'manifest.json',
+'icons/icon-192.png',
+'icons/icon-512.png',
+'favicon.ico'
 ];
 
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
-    );
-    self.skipWaiting();
+  event.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then(keys =>
-        Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-        )
-    );
-    self.clients.claim();
+  event.waitUntil(
+    caches.keys().then(keys =>
+    Promise.all(keys.map(k => (k !== CACHE) && caches.delete(k)))
+    )
+  );
+  self.clients.claim();
 });
 
-// Cache-first pour ASSETS, réseau sinon, avec fallback offline
 self.addEventListener('fetch', (event) => {
-    const req = event.request;
+  const req = event.request;
+  const url = new URL(req.url);
+
+  // 0) Laisser passer tout ce qui n'est PAS même origine (CDN, APIs…)
+  if (url.origin !== ORIGIN) return;
+
+  // 1) Requêtes de navigation (HTML)
+  const isHTML = req.mode === 'navigate'
+  || (req.headers.get('accept') || '').includes('text/html');
+
+  if (isHTML) {
     event.respondWith(
-        caches.match(req).then(cached => {
-            if (cached) return cached;
-            return fetch(req).catch(() => {
-                // fallback simple : renvoie l’index si offline et HTML
-                if (req.headers.get('accept')?.includes('text/html')) {
-                    return caches.match('/index.html');
-                }
-            });
-        })
+      fetch(req)
+      .then(resp => {
+        // Met à jour le cache en arrière-plan
+        const copy = resp.clone();
+        caches.open(CACHE).then(c => c.put('index.html', copy)).catch(()=>{});
+        return resp;
+      })
+      .catch(async () =>
+      (await caches.match(req)) || (await caches.match('index.html'))
+      )
     );
+    return;
+  }
+
+  // 2) Uniquement GET locaux → cache-first
+  if (req.method === 'GET') {
+    event.respondWith(
+      caches.match(req).then(cached => {
+        if (cached) return cached;
+        return fetch(req).then(resp => {
+          if (resp.ok) {
+            const clone = resp.clone();
+            caches.open(CACHE).then(c => c.put(req, clone)).catch(()=>{});
+          }
+          return resp;
+        }).catch(() => undefined);
+      })
+    );
+  }
 });

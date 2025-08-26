@@ -1,11 +1,20 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+  <!-- Anti-FOUC: cache le contenu jusqu'à ce que CSS + fonts soient prêtes -->
+  <style>html.fouc-guard body{visibility:hidden}</style>
+  <script>
+    document.documentElement.classList.add('fouc-guard');
+    window.addEventListener('load', () => {
+      // fonts + CSS chargées à 'load' → on peut afficher
+      document.documentElement.classList.remove('fouc-guard');
+    }, { once:true });
+  </script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Assistant personnel</title>
 
   <!-- 🔒 Bootstrap de thème AVANT toute CSS pour éviter le flash -->
@@ -27,7 +36,9 @@
 
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <!-- Google OAuth Client ID (public). Mets ici TON ID une seule fois. -->
+  <meta name="google-client-id" content="226062651667-fdqb383hnrb14dpj5rf4rup4epbgbtsd.apps.googleusercontent.com">
   <style>
     /* Forcer l’overlay à occuper tout l’écran et le panneau à s’afficher */
     #icon-sheet{position:fixed; inset:0; display:none; z-index:4000;}
@@ -41,16 +52,28 @@
       transform:translateY(0);
     }
   </style>
+  <!-- Icônes (CORS friendly) -->
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
   <!-- Font Awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+        crossorigin="anonymous" referrerpolicy="no-referrer">
+
   <!-- Material Icons -->
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/icon?family=Material+Icons">
+
   <!-- Bootstrap Icons -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+        crossorigin="anonymous">
   <!-- Dropbox JS SDK -->
   <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
   <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <!-- Plotly.js 3.0.3 (dernière stable 3.x au moment où j’écris) -->
   <script src="https://cdn.plot.ly/plotly-3.0.3.min.js"></script>
 </head>
@@ -69,17 +92,17 @@
       </button>
 
       <!-- Contenu du menu profil (dropdown) -->
-      <div class="profile-dropdown" id="profileDropdown" role="menu" aria-hidden="true"
-           style="display:none; position:fixed; top:46px; right:12px; z-index:5001;">
+    <div class="profile-dropdown" id="profileDropdown" role="menu" aria-hidden="true"
+              style="display:none; position:fixed; top:46px; right:12px; z-index:5001;">
       <div class="menu-section">
         <div class="menu-title">Cloud & synchronisation</div>
 
-        <!-- Dossier local (File System Access) -->
+        <!-- Dossier local -->
         <div class="service-row">
           <div class="service-head">
             <i class="fa-solid fa-folder"></i>
-            <span>Dossier local (File System Access)</span>
-            <span class="service-status" id="folder-status">Non configuré</span>
+            <span>Dossier local</span>
+            <span class="service-status unsupported" id="folder-status">Non supporté par ce navigateur</span>
           </div>
           <div class="service-actions">
             <button id="pick-folder-btn">Choisir le dossier…</button>
@@ -92,6 +115,9 @@
           <div class="service-head">
             <i class="fa-brands fa-dropbox"></i>
             <span>Dropbox</span>
+            <button id="dropbox-config" class="config-btn" title="Configurer Dropbox" aria-label="Configurer Dropbox">
+              <i class="fa-solid fa-gear" aria-hidden="true"></i>
+            </button>
             <span class="service-status" id="dropbox-status">…</span>
           </div>
           <div class="service-actions">
@@ -105,6 +131,9 @@
           <div class="service-head">
             <i class="fa-brands fa-google-drive"></i>
             <span>Google Drive</span>
+            <button id="google-config" class="config-btn" title="Configurer Google Drive" aria-label="Configurer Google Drive">
+              <i class="fa-solid fa-gear" aria-hidden="true"></i>
+            </button>
             <span class="service-status" id="google-status">…</span>
           </div>
           <div class="service-actions">
@@ -117,7 +146,10 @@
         <div class="service-row">
           <div class="service-head">
             <i class="fa-brands fa-microsoft"></i>
-            <span>Microsoft OneDrive</span>
+            <span>OneDrive</span>
+            <button id="ms-config" class="config-btn" title="Configurer OneDrive" aria-label="Configurer OneDrive">
+              <i class="fa-solid fa-gear" aria-hidden="true"></i>
+            </button>
             <span class="service-status" id="ms-status">…</span>
           </div>
           <div class="service-actions">
@@ -126,8 +158,83 @@
           </div>
         </div>
       </div><!-- /.menu-section -->
-      </div><!-- /.profile-dropdown -->
-    </div><!-- /.profile-menu -->
+
+      <!-- ✅ SECTION : Apparence & préférences -->
+      <div class="menu-section prefs-section">
+        <div class="menu-title">Apparence & préférences</div>
+
+        <!-- Groupe : Thème clair / sombre -->
+        <div class="prefs-group">
+          <div class="prefs-row">
+            <div class="prefs-label">Thème</div>
+            <button class="theme-toggle" id="themeToggle" aria-pressed="false" aria-label="Basculer clair/sombre">
+              <span class="tt-track" aria-hidden="true"></span>
+              <span class="tt-knob" aria-hidden="true">
+                <svg class="tt-sun" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="12" r="5"></circle>
+                  <g class="rays">
+                    <line x1="12" y1="1.5" x2="12" y2="4.5"></line>
+                    <line x1="12" y1="19.5" x2="12" y2="22.5"></line>
+                    <line x1="1.5" y1="12" x2="4.5" y2="12"></line>
+                    <line x1="19.5" y1="12" x2="22.5" y2="12"></line>
+                    <line x1="4.2" y1="4.2" x2="6.3" y2="6.3"></line>
+                    <line x1="17.7" y1="17.7" x2="19.8" y2="19.8"></line>
+                    <line x1="17.7" y1="6.3" x2="19.8" y2="4.2"></line>
+                    <line x1="4.2" y1="19.8" x2="6.3" y2="17.7"></line>
+                  </g>
+                </svg>
+                <svg class="tt-moon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Groupe : Jauge de découvert (activation générale) -->
+        <div class="prefs-group">
+          <label class="od-alert-row">
+            <input id="od-enabled" type="checkbox" checked>
+            <span>Afficher la jauge de découvert dans l’onglet Calendrier</span>
+          </label>
+          <small class="od-help">Décoche si tu préfères masquer cette jauge.</small>
+        </div>
+
+        <!-- Groupe : Droit de découvert -->
+        <div class="prefs-group">
+          <label for="od-limit" class="prefs-label"><i class="fa-solid fa-piggy-bank" style="margin-right:.4em;"></i>Droit de découvert (EUR)</label>
+          <div class="od-input-wrap">
+            <input id="od-limit" type="number" inputmode="decimal" step="0.01" min="0" placeholder="Ex. 200,00" class="od-input">
+            <span class="od-suffix">€</span>
+          </div>
+
+          <label class="od-alert-row">
+            <input id="od-alerts" type="checkbox">
+            <span>Activer l’alerte en cas de dépassement</span>
+          </label>
+
+          <small class="od-help">La jauge se met à jour selon ton solde et la limite choisie.</small>
+        </div>
+
+        <!-- Groupe : Couleur du bandeau -->
+        <div class="prefs-group">
+          <div class="prefs-label"><i class="fa-solid fa-palette" style="margin-right:.4em;"></i>Couleur du bandeau</div>
+          <div class="swatch-list" id="topbar-color-swatches" aria-label="Choisir une couleur de bandeau">
+            <button class="swatch-btn" data-color="#65b8f7" style="--sw:#65b8f7;" aria-label="Bleu"></button>
+            <button class="swatch-btn" data-color="#7c4dff" style="--sw:#7c4dff;" aria-label="Violet"></button>
+            <button class="swatch-btn" data-color="#00bfa5" style="--sw:#00bfa5;" aria-label="Turquoise"></button>
+            <button class="swatch-btn" data-color="#43a047" style="--sw:#43a047;" aria-label="Vert"></button>
+            <button class="swatch-btn" data-color="#546e7a" style="--sw:#546e7a;" aria-label="Bleu gris"></button>
+            <button class="swatch-btn" data-color="#ff7043" style="--sw:#ff7043;" aria-label="Orange"></button>
+            <button class="swatch-btn" data-color="#ef5350" style="--sw:#ef5350;" aria-label="Rouge"></button>
+            <label class="custom-color" title="Couleur personnalisée">
+              <input type="color" id="topbar-color-input" value="#65b8f7" aria-label="Couleur personnalisée du bandeau">
+              <span>Perso…</span>
+            </label>
+          </div>
+        </div>
+      </div><!-- /.menu-section -->
+    </div><!-- /.profile-dropdown -->
   </div><!-- /.topbar -->
 
   <!-- Navigation des modules de la multi-application -->
@@ -356,25 +463,267 @@
           <h2>Liste des transactions</h2>
           <ul id="transactions-list"></ul>
         </section>
-        <section id="export-section">
-          <h2>Exportation</h2>
-          <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
-            <button id="export-json">Exporter en JSON</button>
-            <button id="export-pdf" title="Exporter en PDF">
-              <i class="fa-solid fa-file-pdf"></i> Exporter en PDF
-            </button>
-          </div>
-        </section>
+      <section id="export-section">
+        <h2>Exportation & importation</h2>
+        <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+          <button id="export-json">Exporter en JSON</button>
+          <button id="export-pdf" title="Exporter en PDF">
+            <i class="fa-solid fa-file-pdf"></i> Exporter en PDF
+          </button>
+
+          <!-- ✅ Nouveau : Import JSON -->
+          <button id="import-json" title="Importer un fichier JSON de transactions">
+            <i class="fa-solid fa-file-arrow-up"></i> Importer un JSON
+          </button>
+          <input id="import-json-file" type="file" accept=".json,application/json" style="display:none;">
+        </div>
+
+        <p id="import-hint" class="muted" style="margin-top:.4rem;">
+          Tu peux importer un fichier exporté depuis l’app ou un JSON compatible (liste de transactions).
+        </p>
+      </section>
       </div>
       </div><!-- fin main-container finances -->
     </div><!-- fin app-finance -->
     <!-- Sections placeholders pour les autres modules de la multi‑application -->
-    <div id="app-agenda" class="app-section" style="display:none;">
-      <section class="placeholder-section">
-        <h2>Agenda</h2>
-        <p>Ce module sera bientôt disponible.</p>
-      </section>
+    <section id="app-agenda" class="app-section" style="display:none">
+      <!-- Styles SCOPÉS à l’Agenda -->
+      <style>
+        #app-agenda {
+          --ag-surface: var(--color-surface, #fff);
+          --ag-surface-2: var(--color-surface-2, #f6fbfd);
+          --ag-primary: var(--color-primary, #65b8f7);
+          --ag-on: var(--on-surface-strong, #243037);
+          --ag-on-muted: var(--on-surface-muted, #5c6a72);
+          --ag-border: color-mix(in srgb, var(--ag-on) 8%, transparent);
+          --ag-shadow: 0 6px 20px rgba(0,0,0,.06);
+          --ag-radius: 14px;
+          --ag-radius-pill: 999px;
+        }
+        #app-agenda .card {
+          background: var(--ag-surface);
+          border: 1px solid var(--ag-border);
+          border-radius: var(--ag-radius);
+          box-shadow: var(--ag-shadow);
+          padding: 12px;
+        }
+        #app-agenda .row { display: flex; gap: 12px; flex-wrap: wrap; }
+        #app-agenda .col { flex: 1; min-width: 220px; }
+        #app-agenda .subtle { color: var(--ag-on-muted); font-size: .95rem; }
+        #app-agenda .muted  { color: var(--ag-on-muted); }
+
+        #app-agenda .btn {
+          appearance: none; border: 1px solid var(--ag-border); background: var(--ag-surface);
+          padding: 8px 12px; border-radius: var(--ag-radius-pill); cursor: pointer;
+          transition: transform .05s ease, background .2s, border-color .2s, box-shadow .2s;
+          color: var(--ag-on); /* force text/icons to use readable agenda foreground */
+        }
+        #app-agenda .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+        #app-agenda .btn:active { transform: translateY(0); }
+        #app-agenda .btn.primary {
+          background: var(--ag-primary); color: #fff; border-color: transparent;
+        }
+        #app-agenda .btn.ghost {
+          background: color-mix(in srgb, var(--ag-primary) 8%, var(--ag-surface));
+          border-color: color-mix(in srgb, var(--ag-primary) 25%, var(--ag-border));
+        }
+        #app-agenda .btn.danger { border-color: rgba(220, 20, 60, .35); }
+        #app-agenda .btn.danger:hover { background: rgba(220, 20, 60, .08); }
+
+        #app-agenda .label { display:block; margin: 0 0 6px; font-weight: 600; color: var(--ag-on); }
+        #app-agenda .input, #app-agenda select.input {
+          width: 100%; padding: 10px 12px; border-radius: 10px;
+          border: 1px solid var(--ag-border); background: var(--ag-surface);
+          color: var(--ag-on);
+        }
+        #app-agenda .select-wrap { position: relative; }
+        #app-agenda .select-wrap::after {
+          content: "▾"; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+          pointer-events: none; color: var(--ag-on-muted);
+        }
+
+        #app-agenda .cal-nav { display: flex; align-items: center; gap: 8px; }
+        #app-agenda #ag-month { min-width: 190px; text-align: center; font-weight: 700; }
+  /* Ensure nav arrows and the "Aujourd'hui" button remain visible on all themes */
+  #app-agenda .cal-nav .btn { color: var(--ag-on); }
+  #app-agenda .cal-nav .btn.ghost { color: var(--ag-on); }
+
+        #app-agenda #ag-cal-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+        #app-agenda .ag-chip {
+          display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px;
+          background: var(--ag-surface-2); border: 1px solid var(--ag-border);
+          border-radius: var(--ag-radius-pill); cursor: pointer;
+        }
+        #app-agenda .ag-chip input { display: none; }
+        #app-agenda .ag-chip .dot { width: 10px; height: 10px; border-radius: 50%; }
+        #app-agenda .ag-chip input:checked + .dot { outline: 2px solid color-mix(in srgb, var(--ag-primary) 40%, transparent); outline-offset: 2px; }
+
+        #app-agenda .ag-grid-head {
+          display:grid; grid-template-columns:repeat(7,1fr); gap:6px; padding:6px 0; font-weight:600; opacity:.85;
+        }
+        #app-agenda .ag-grid-body { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+        #app-agenda .ag-day {
+          min-height: 120px; border-radius: 14px; padding: 8px;
+          background: var(--ag-surface); border: 1px solid var(--ag-border);
+          display:flex; flex-direction:column; gap:6px;
+        }
+        #app-agenda .ag-day.is-selected { outline: 2px solid var(--ag-primary); }
+        #app-agenda .badge { font-size: 12px; padding: 2px 8px; border-radius: var(--ag-radius-pill); background: var(--ag-primary); color:#fff; }
+        #app-agenda .ag-pill {
+          display:flex; align-items:center; gap:6px; font-size:13px; padding:4px 6px;
+          border-radius: var(--ag-radius-pill); background: color-mix(in srgb, var(--ag-on) 6%, transparent);
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;
+        }
+
+        #app-agenda #ag-quick-form { display:none; align-items:flex-end; gap:8px; }
+        #app-agenda #ag-day-list .card { padding: 10px 12px; }
+
+        /* Carte Google */
+        #app-agenda .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+        #app-agenda .help { font-size:.9rem; color: var(--ag-on-muted); }
+        @media (max-width: 720px){ #app-agenda .grid-2 { grid-template-columns: 1fr; } }
+
+        @media (max-width: 640px) {
+          #app-agenda #ag-month { min-width: auto; font-size: 1rem; }
+          #app-agenda .cal-nav .btn { padding: 6px 10px; }
+          #app-agenda .ag-day { min-height: 96px; padding: 6px; }
+          #app-agenda .ag-grid-head { font-size: .9rem; }
+          #app-agenda #ag-cal-filters { overflow:auto; padding-bottom: 2px; }
+          #app-agenda .ag-chip { padding: 5px 8px; }
+        }
+      </style>
+
+      <div class="section-header" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <div>
+          <h2 style="margin:0;">Agenda</h2>
+        </div>
+        <div class="cal-nav">
+          <button id="ag-prev" class="btn ghost" title="Mois précédent">◀</button>
+          <div id="ag-month"></div>
+          <button id="ag-next" class="btn ghost" title="Mois suivant">▶</button>
+          <button id="ag-today" class="btn">Aujourd’hui</button>
+        </div>
+      </div>
+
+      <!-- Bandeau rôles + filtres -->
+      <div class="card" style="margin-bottom:12px;">
+        <div class="row" style="align-items:center;">
+          <!-- 'Qui suis-je' removed as requested -->
+          <div class="col" style="flex:1;">
+            <div class="label" style="margin-bottom:6px;">Calendriers visibles</div>
+            <div id="ag-cal-filters"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Calendrier -->
+      <div class="card">
+        <div class="ag-grid-head">
+          <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+        </div>
+        <div id="ag-grid" class="ag-grid-body"></div>
+      </div>
+
+      <!-- Panneau jour -->
+      <div class="card" style="margin-top:12px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+          <h3 id="ag-day-title" style="margin:6px 0;">Sélectionne un jour…</h3>
+          <div id="ag-quick-form">
+            <div class="select-wrap"><select id="ag-quick-cal" class="input" title="Calendrier"></select></div>
+            <input id="ag-quick-title" class="input" placeholder="Nouvel évènement…" />
+            <button id="ag-quick-add" class="btn primary">Ajouter</button>
+          </div>
+        </div>
+        <div id="ag-day-list" class="list" style="display:grid; gap:8px; margin-top:8px;"></div>
+        <div id="ag-day-empty" class="muted" style="padding:8px 0;">Aucun évènement ce jour.</div>
+      </div>
+
+    <!-- Organisations & Google -->
+    <div class="card" style="margin-top:12px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:6px 0;">Organisations & Google</h3>
+          <div class="help">
+            Une <b>Organisation</b> = 1 calendrier Général + (optionnel) 1 calendrier par membre. Exemple : Famille, Projet, Colocs.
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button id="gcal-connect" class="btn primary">Se connecter à Google</button>
+          <button id="gcal-logout" class="btn danger">Se déconnecter</button>
+        </div>
+      </div>
+
+      <div id="gcal-status" class="subtle" style="margin-top:6px;">Non connecté.</div>
+
+      <div class="grid-2" style="margin-top:12px;">
+        <!-- Créer / gérer -->
+        <div>
+          <div class="label">Créer une organisation</div>
+          <input id="org-name" class="input" placeholder="Nom de l’organisation (ex: Famille Martin, Projet Alpha)" style="width:100%; max-width:480px;">
+          <div style="height:8px;"></div>
+
+          <div>
+            <div class="label">Membres (e-mails)</div>
+            <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;">
+              <textarea id="org-members" class="input" rows="3"
+                        placeholder="Séparez par virgules ou retours à la ligne"
+                        style="width:100%; max-width:480px;"></textarea>
+              <button id="org-invite" class="btn" disabled title="Inviter ces e-mails à l’organisation">
+                Inviter les membres
+              </button>
+            </div>
+          </div>
+
+          <div style="margin:8px 0; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <label style="display:flex; gap:6px; align-items:center;">
+              <input type="checkbox" id="org-create-personals" checked>
+              <span>Créer un calendrier personnel par membre</span>
+            </label>
+            <label style="display:flex; gap:6px; align-items:center;">
+              <input type="checkbox" id="org-send-invites" checked>
+              <span>Envoyer un e-mail d’invitation</span>
+            </label>
+          </div>
+
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button id="org-create-btn" class="btn">Créer l’organisation</button>
+            <button id="org-refresh" class="btn ghost">Actualiser mes organisations</button>
+          </div>
+          <div class="help" style="margin-top:6px;">
+            Le compte connecté est <b>propriétaire</b> des agendas de l’organisation.
+          </div>
+        </div>
+
+        <!-- Mes organisations / Partagées -->
+        <div>
+          <div style="display:flex; gap:12px; align-items:center; justify-content:space-between;">
+            <div class="label">Organisations visibles</div>
+            <div style="display:flex; gap:8px;">
+              <button id="org-import" class="btn ghost" title="Affiche (importe) les évènements du mois visible pour les organisations cochées">Afficher le mois (organisations cochées)</button>
+              <button id="org-import-primary" class="btn ghost" title="Copie votre calendrier principal Google dans le Général de l’organisation sélectionnée (mois visible)">Récupérer mon calendrier principal → Général</button>
+            </div>
+          </div>
+
+          <div style="margin-top:6px;">
+              <div style="font-weight:600; margin:6px 0;">Mes organisations (propriétaire)</div>
+
+              <!-- Invitations reçues / notifications (local-first) -->
+              <div id="org-invitations" style="margin-top:8px;">
+                <div style="font-weight:600; margin:6px 0;">Invitations</div>
+                <div id="org-invite-notifs" class="muted" style="margin-bottom:6px;">Aucune invitation.</div>
+                <div id="org-invite-list" class="list"></div>
+              </div>
+            <div id="org-owned-list" class="list"></div>
+
+            <div style="height:10px;"></div>
+
+            <div style="font-weight:600; margin:6px 0;">Organisations partagées avec moi</div>
+            <div id="org-shared-list" class="list"></div>
+          </div>
+        </div>
+      </div>
     </div>
+    </section>
     <div id="app-courses" class="app-section" style="display:none;">
       <section class="placeholder-section">
         <h2>Courses</h2>
@@ -611,7 +960,7 @@
         <input type="checkbox" id="exp-stats" checked>
         <span class="opt-icon"><i class="fa-solid fa-chart-pie"></i></span>
         <span class="opt-text">
-          <strong>Graphes</strong>
+          <strong>Graphiques</strong>
           <small>La section Statistiques (camembert)</small>
         </span>
       </label>
@@ -753,16 +1102,71 @@ window.addEventListener('beforeinstallprompt', (e) => {
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <!-- Script principal (chargé après le parsing du HTML) -->
-<script src="script.js" defer></script>
-
+<script type="module" src="script.js"></script>
 <script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .catch(console.error);
+/* Recovery shim — nav multi-app + coupe tout overlay bloquant,
+   fonctionne même si script.js a planté. */
+(() => {
+  function killOverlays(){
+    ['icon-sheet','auth-overlay'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('is-open');
+      el.setAttribute('aria-hidden','true');
+      el.style.display = 'none';
+      el.style.pointerEvents = 'none';
+    });
+  }
+
+  function bindNav(){
+    const btns = Array.from(document.querySelectorAll('.app-btn'));
+    const sections = Array.from(document.querySelectorAll('.app-section'));
+    if (!btns.length || !sections.length) return;
+
+    const allowed = new Set(btns.map(b => b.dataset.app));
+    function show(app){
+      if (!allowed.has(app)) app = btns[0].dataset.app;
+      btns.forEach(b => b.classList.toggle('active', b.dataset.app === app));
+      sections.forEach(sec => sec.style.display = 'none');
+      const target = document.getElementById('app-'+app);
+      if (target) target.style.display = 'block';
+      try { localStorage.setItem('app:last', app); } catch {}
+      try { history.replaceState(null,'','#'+app); } catch { location.hash = app; }
+    }
+
+    btns.forEach(b => b.addEventListener('click', () => show(b.dataset.app), { passive:true }));
+
+    // Choix initial : hash > localStorage > premier bouton
+    const raw = (location.hash || '').replace(/^#/,'');
+    const fromHash = raw.startsWith('app=') ? raw.slice(4) : raw;
+    const start = allowed.has(fromHash)
+      ? fromHash
+      : (localStorage.getItem('app:last') || btns[0].dataset.app);
+    show(start);
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    killOverlays();
+    bindNav();
   });
-}
+})();
 </script>
 
+<!-- === Modal: choix de la transaction à modifier === -->
+<div id="modal-pick-transaction" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <div class="modal-content" style="max-width:560px">
+    <div class="modal-header">
+      <h5 class="modal-title">Quelle transaction modifier ?</h5>
+      <button type="button" class="modal-close" id="mp-close" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="mp-list" class="mp-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" id="mp-cancel" class="btn-secondary">Annuler</button>
+      <button type="button" id="mp-confirm" class="btn-primary" disabled>Éditer</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

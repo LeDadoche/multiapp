@@ -1,7 +1,7 @@
-// Helpers sans crash
-const $$ = (s, ctx=document) => Array.from(ctx.querySelectorAll(s));
-const onAll = (sel, evt, fn) => $$(sel).forEach(el => el.addEventListener(evt, fn));
+// script.js (shim) — charge le vrai point d'entrée modulaire
+import './src/js/index.js';
 
+// Pour compatibilité, les autres scripts peuvent toujours s'appuyer sur globales exposées par index.js
 // --- PATCH A: sécurité pour openIconPicker (existe partout, ne plante jamais)
 if (typeof window.openIconPicker !== 'function') {
   window.openIconPicker = function (e) {
@@ -47,21 +47,70 @@ function openIconPicker(e){
   if (dd) dd.style.display = (getComputedStyle(dd).display === 'none' ? 'block' : 'none');
 }
 
-// --- Configuration Dropbox ---
-const DROPBOX_APP_KEY = "sx9tl18fkusxm05";
-const DROPBOX_FILE = "/transactions.json";
+// --- Configuration dynamique des services cloud ---
+// Ce fichier ne contient plus d'identifiants d'application par défaut. Pour chaque service
+// (Dropbox, Google Drive, Microsoft OneDrive), l'utilisateur peut saisir son propre
+// identifiant client via le menu de configuration. Les valeurs sont stockées
+// localement dans localStorage et récupérées via les fonctions ci‑dessous.
+const DEFAULT_CLOUD_FILE_PATH = '/transactions.json';
 
-// --- Configuration pour d'autres services cloud (Google Drive et Microsoft OneDrive)
-// Remplacez ces identifiants client par les vôtres pour activer l'authentification OAuth.
-const GOOGLE_CLIENT_ID = "REPLACE_WITH_GOOGLE_CLIENT_ID";
-const MICROSOFT_CLIENT_ID = "REPLACE_WITH_MICROSOFT_CLIENT_ID";
+// Stockage et récupération du client ID Dropbox
+function getDropboxClientId() {
+  return localStorage.getItem('dropbox_client_id') || '';
+}
+function setDropboxClientId(id) {
+  if (id) localStorage.setItem('dropbox_client_id', id);
+}
+
+// Stockage et récupération du client ID Google
+function getGoogleClientId() {
+  return localStorage.getItem('google_client_id') || '';
+}
+function setGoogleClientId(id) {
+  if (id) localStorage.setItem('google_client_id', id);
+}
+
+// Stockage et récupération du client ID Microsoft/OneDrive
+function getMSClientId() {
+  return localStorage.getItem('ms_client_id') || '';
+}
+function setMSClientId(id) {
+  if (id) localStorage.setItem('ms_client_id', id);
+}
+
+// Optionnel : personnaliser le chemin du fichier sur le cloud
+function getCloudFilePath() {
+  return localStorage.getItem('cloud_file_path') || DEFAULT_CLOUD_FILE_PATH;
+}
+function setCloudFilePath(path) {
+  if (path) localStorage.setItem('cloud_file_path', path);
+}
 
 // Jetons d'accès pour les différents services
 let googleAccessToken = null;
 let msAccessToken = null;
 
 let dbx, accessToken = null;
+
+// ===== SOURCE UNIQUE =====
 let transactions = [];
+
+// 🚀 BOOTSTRAP SYNCHRONE dès le chargement (avant tout rendu/async)
+// -> Alimente "transactions" depuis localStorage pour que le calendrier
+//    ait des données visibles immédiatement après F5.
+(function bootstrapTransactionsOnce() {
+  try {
+    const raw = localStorage.getItem('transactions');
+    const arr = raw ? JSON.parse(raw) : [];
+    transactions = Array.isArray(arr) ? arr : [];
+    // On aligne aussi window.transactions (historique lit parfois cette ref)
+    window.transactions = transactions;
+  } catch (_) {
+    transactions = [];
+    window.transactions = transactions;
+  }
+})();
+
 let currentMonth = new Date();
 let selectedDate = null; // mémorise la case sélectionnée (YYYY-MM-DD)
 let monthSortMode = 'date-asc'; // valeur initiale
@@ -124,52 +173,6 @@ function setStorageModeLocalValue(mode) {
 
 function isFsaSupported() {
   return typeof window.showDirectoryPicker === 'function';
-}
-
-function loadTransactionsLocal() {
-  const raw = localStorage.getItem('transactions');
-  transactions = raw ? JSON.parse(raw) : [];
-}
-function saveTransactionsLocal() {
-  localStorage.setItem('transactions', JSON.stringify(transactions));
-}
-
-async function ensureFolderFile() {
-  if (!isFsaSupported()) throw new Error('File System Access non supporté');
-  if (!__folderDirHandle) {
-    __folderDirHandle = await window.showDirectoryPicker();
-  }
-  // Sous-dossier "AssistantPersonnel"
-  const appDir = await __folderDirHandle.getDirectoryHandle('AssistantPersonnel', { create: true });
-  __folderFileHandle = await appDir.getFileHandle('transactions.json', { create: true });
-
-  const opts = { mode: 'readwrite' };
-  if (await __folderFileHandle.queryPermission(opts) !== 'granted') {
-    const p = await __folderFileHandle.requestPermission(opts);
-    if (p !== 'granted') throw new Error('Permission refusée');
-  }
-}
-
-async function loadTransactionsFolder() {
-  await ensureFolderFile();
-  const file = await __folderFileHandle.getFile();
-  const text = await file.text().catch(()=>'[]');
-  try {
-    transactions = text?.trim() ? JSON.parse(text) : [];
-  } catch {
-    transactions = [];
-  }
-  // on garde aussi une copie locale pour le cache/offline
-  saveTransactionsLocal();
-}
-
-async function saveTransactionsFolder() {
-  await ensureFolderFile();
-  const writable = await __folderFileHandle.createWritable();
-  await writable.write(new Blob([JSON.stringify(transactions, null, 2)], { type: 'application/json' }));
-  await writable.close();
-  // copie locale pour offline
-  saveTransactionsLocal();
 }
 
 // Charge selon le mode sélectionné (avec fallback)
@@ -310,8 +313,14 @@ function isDropboxConnected() {
   return !!accessToken;
 }
 function loginDropbox() {
+  // Récupère l'identifiant client configuré
+  const clientId = getDropboxClientId();
+  if (!clientId) {
+    alert("Veuillez configurer votre identifiant client Dropbox dans le menu profil (icône engrenage) avant de vous connecter.");
+    return;
+  }
   const redirectUri = window.location.origin + window.location.pathname;
-  const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const authUrl = `https://www.dropbox.com/oauth2/authorize?client_id=${encodeURIComponent(clientId)}&response_type=token&redirect_uri=${encodeURIComponent(redirectUri)}`;
   window.location.href = authUrl;
 }
 function parseDropboxTokenFromUrl() {
@@ -332,7 +341,15 @@ function updateDropboxStatus() {
   const loginBtn = document.getElementById('dropbox-login');
   if (!status || !logoutBtn || !loginBtn) return;
 
-  if (isDropboxConnected()) {
+  const clientId = getDropboxClientId();
+  if (!clientId) {
+    // Indique qu'aucune configuration n'est définie
+    status.textContent = "Non configuré";
+    status.style.color = "#d32f2f";
+    // On masque les boutons de connexion tant que l'App ID n'est pas renseigné
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "none";
+  } else if (isDropboxConnected()) {
     status.textContent = "Connecté";
     status.style.color = "#27524b";
     loginBtn.style.display = "none";
@@ -361,7 +378,7 @@ function logoutDropbox() {
 
 async function loadTransactionsDropbox() {
   try {
-    const response = await dbx.filesDownload({path: DROPBOX_FILE});
+    const response = await dbx.filesDownload({path: getCloudFilePath()});
     const blob = response.result.fileBlob || response.result.fileBinary;
     const text = await blob.text();
     transactions = JSON.parse(text);
@@ -377,9 +394,9 @@ async function saveTransactionsDropbox() {
   if (!dbx || !accessToken) return;
   try {
     await dbx.filesUpload({
-      path: DROPBOX_FILE,
+      path: getCloudFilePath(),
       contents: JSON.stringify(transactions, null, 2),
-                          mode: { ".tag": "overwrite" }
+      mode: { ".tag": "overwrite" }
     });
   } catch (e) {
     alert("Erreur lors de la sauvegarde Dropbox : " + JSON.stringify(e.error || e));
@@ -392,26 +409,36 @@ function isGoogleConnected() { return !!googleAccessToken; }
 function isMSConnected() { return !!msAccessToken; }
 
 function loginGoogle() {
+  const clientId = getGoogleClientId();
+  if (!clientId) {
+    alert("Veuillez configurer votre identifiant client Google Drive dans le menu profil (icône engrenage) avant de vous connecter.");
+    return;
+  }
   const redirectUri = window.location.origin + window.location.pathname;
   sessionStorage.setItem('oauth_service', 'google');
   const authUrl =
-  `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}` +
-  `&response_type=token` +
-  `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-  `&scope=${encodeURIComponent('https://www.googleapis.com/auth/drive.file')}` +
-  `&include_granted_scopes=true` +
-  `&state=google`;
+    `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=token` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent('https://www.googleapis.com/auth/drive.file')}` +
+    `&include_granted_scopes=true` +
+    `&state=google`;
   window.location.href = authUrl;
 }
 function loginMS() {
+  const clientId = getMSClientId();
+  if (!clientId) {
+    alert("Veuillez configurer votre identifiant client Microsoft/OneDrive dans le menu profil (icône engrenage) avant de vous connecter.");
+    return;
+  }
   const redirectUri = window.location.origin + window.location.pathname;
   sessionStorage.setItem('oauth_service', 'ms');
   const authUrl =
-  `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${MICROSOFT_CLIENT_ID}` +
-  `&response_type=token` +
-  `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-  `&scope=${encodeURIComponent('Files.ReadWrite offline_access')}` +
-  `&state=ms`;
+    `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${encodeURIComponent(clientId)}` +
+    `&response_type=token` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&scope=${encodeURIComponent('Files.ReadWrite offline_access')}` +
+    `&state=ms`;
   window.location.href = authUrl;
 }
 function parseCloudTokensFromUrl() {
@@ -446,7 +473,13 @@ function updateGoogleStatus() {
   const loginBtn = document.getElementById('google-login');
   const logoutBtn = document.getElementById('google-logout');
   if (!status || !loginBtn || !logoutBtn) return;
-  if (isGoogleConnected()) {
+  const clientId = getGoogleClientId();
+  if (!clientId) {
+    status.textContent = "Non configuré";
+    status.style.color = "#d32f2f";
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "none";
+  } else if (isGoogleConnected()) {
     status.textContent = "Connecté";
     status.style.color = "#27524b";
     loginBtn.style.display = "none";
@@ -468,7 +501,13 @@ function updateMSStatus() {
   const loginBtn = document.getElementById('ms-login');
   const logoutBtn = document.getElementById('ms-logout');
   if (!status || !loginBtn || !logoutBtn) return;
-  if (isMSConnected()) {
+  const clientId = getMSClientId();
+  if (!clientId) {
+    status.textContent = "Non configuré";
+    status.style.color = "#d32f2f";
+    loginBtn.style.display = "none";
+    logoutBtn.style.display = "none";
+  } else if (isMSConnected()) {
     status.textContent = "Connecté";
     status.style.color = "#27524b";
     loginBtn.style.display = "none";
@@ -514,6 +553,41 @@ function logoutMS() {
       if (e.key === 'Escape') closeMenu();
     });
 })();
+
+// ===== Configurateurs des identifiants client pour les services cloud =====
+function configureDropboxClient() {
+  const current = getDropboxClientId();
+  const id = prompt("Veuillez saisir votre identifiant client Dropbox (App key) :", current || "");
+  if (id === null) return;
+  const trimmed = id.trim();
+  if (trimmed) {
+    setDropboxClientId(trimmed);
+    alert('Identifiant Dropbox enregistré. Vous pouvez maintenant vous connecter.');
+  }
+  updateDropboxStatus();
+}
+function configureGoogleClient() {
+  const current = getGoogleClientId();
+  const id = prompt("Veuillez saisir votre identifiant client Google Drive :", current || "");
+  if (id === null) return;
+  const trimmed = id.trim();
+  if (trimmed) {
+    setGoogleClientId(trimmed);
+    alert('Identifiant Google Drive enregistré. Vous pouvez maintenant vous connecter.');
+  }
+  updateGoogleStatus();
+}
+function configureMSClient() {
+  const current = getMSClientId();
+  const id = prompt("Veuillez saisir votre identifiant client Microsoft/OneDrive :", current || "");
+  if (id === null) return;
+  const trimmed = id.trim();
+  if (trimmed) {
+    setMSClientId(trimmed);
+    alert('Identifiant OneDrive enregistré. Vous pouvez maintenant vous connecter.');
+  }
+  updateMSStatus();
+}
 
 // ===== Toggle de thème sombre (switch avec persistance) =====
 (function setupThemeToggle() {
@@ -832,12 +906,17 @@ function occursOnDate(tx, iso) {
  * positionnée sur l’occurrence et un flag __instance = true.
  */
 function expandTransactionsBetween(startIso, endIso) {
-  const start = parseDate(startIso), end = parseDate(endIso);
+  const start = parseDate(startIso);
+  const end   = parseDate(endIso);
+
+  // ✅ Pas de variable globale : on lit la source ici
+  const src = getUnifiedTransactions(); // toujours un tableau (hotfix en haut)
+
   const out = [];
-  // Itère jour par jour (suffisant pour l’UI ; on ne manipule pas de gros volumes)
+  // Itère jour par jour entre start et end (inclus)
   for (let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
     const dayIso = formatDate(cursor);
-    for (const tx of transactions) {
+    for (const tx of src) {
       if (occursOnDate(tx, dayIso)) {
         out.push({ ...tx, date: dayIso, __instance: true });
       }
@@ -846,35 +925,34 @@ function expandTransactionsBetween(startIso, endIso) {
   return out;
 }
 
-// --- Calendrier : rendu + écouteurs (click + double‑click propre)
+// --- Calendrier : rendu + écouteurs (click + double-click propre)
 function renderCalendar() {
   const table = document.getElementById('calendar');
   const details = document.getElementById('day-details');
   const monthTitle = document.getElementById('current-month');
   if (!table || !details || !monthTitle) return;
 
+  const TXS = getUnifiedTransactions();
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
 
-  // Mois + année avec majuscule
+  const todayIso = formatDate(new Date());
+  if (!selectedDate) selectedDate = todayIso;
+
   const label = currentMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   monthTitle.textContent = label.charAt(0).toUpperCase() + label.slice(1);
 
   const firstDay = new Date(year, month, 1);
-  const startDay = firstDay.getDay() || 7; // Lundi=1 ... Dimanche=7
+  let startDay = firstDay.getDay(); if (startDay === 0) startDay = 7; // lundi=1
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const holidays = window.__HOLIDAYS__ || {};
 
-  const holidays = {
-    ...getFrenchHolidays(year - 1),
-    ...getFrenchHolidays(year),
-    ...getFrenchHolidays(year + 1)
-  };
-
+  // --- grille
   let html = `
   <thead>
-  <tr>
-  <th>Lun</th><th>Mar</th><th>Mer</th><th>Jeu</th><th>Ven</th><th>Sam</th><th>Dim</th>
-  </tr>
+    <tr>
+      <th>Lun</th><th>Mar</th><th>Mer</th><th>Jeu</th><th>Ven</th><th>Sam</th><th>Dim</th>
+    </tr>
   </thead>
   <tbody>
   `;
@@ -888,9 +966,9 @@ function renderCalendar() {
       } else {
         const d = new Date(year, month, day);
         const dStr = formatDate(d);
-        const isWeekend = (col >= 6);
+        const isWeekend = col >= 6;
         const isHoliday = holidays[dStr] !== undefined;
-        const isToday = sameDay(d, new Date());
+        const isToday = dStr === todayIso;
 
         let cls = '';
         if (isWeekend) cls += ' calendar-weekend';
@@ -898,11 +976,11 @@ function renderCalendar() {
         if (isToday) cls += ' calendar-today';
         if (selectedDate === dStr) cls += ' selected';
 
-        const dayTx = transactions.filter(t => occursOnDate(t, dStr));
+        const dayTx = TXS.filter(t => occursOnDate(t, dStr));
 
         html += `<td class="${cls.trim()}" data-date="${dStr}">
-        <div class="day-number">${day}</div>
-        ${dayTx.map(t => `<span class="event-dot" title="${t.description}">${renderCategoryIconInline(t.category)}</span>`).join('')}
+          <div class="day-number">${day}</div>
+          ${dayTx.map(t => `<span class="event-dot" title="${t.description || ''}">${renderCategoryIconInline(t.category)}</span>`).join('')}
         </td>`;
         day++;
       }
@@ -912,76 +990,105 @@ function renderCalendar() {
   html += '</tbody>';
   table.innerHTML = html;
 
-  // CLICK : sélection + détails + bouton
-  table.onclick = (e) => {
-    const td = e.target.closest('td[data-date]');
-    if (!td) return;
-
-    // met à jour la sélection visuelle
-    table.querySelectorAll('td.selected').forEach(c => c.classList.remove('selected'));
-    td.classList.add('selected');
-
-    // mémorise la date sélectionnée
-    selectedDate = td.getAttribute('data-date');
-
-    const d = parseDate(selectedDate);
-    const dayTx = transactions.filter(t => occursOnDate(t, selectedDate));
-
+  // --- détails (zone droite)
+  function renderDayDetails(dateIso){
+    const selDateObj = parseDate(dateIso);
+    const selDayTx = TXS.filter(t => occursOnDate(t, dateIso));
     details.innerHTML = `
-    <strong>${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).replace(/^\w/, c=>c.toUpperCase())}</strong>
-    <div id="day-tx-list" style="margin-top:.5em;">
-    ${
-      dayTx.length ? dayTx.map(tx => `
-      <div class="tx-line" data-tx-id="${tx.id}" tabindex="0" style="padding:.2em .3em;border-radius:6px;outline:none;cursor:pointer;">
-      ${renderCategoryIconInline(tx.category)} ${tx.description} — <strong>${(tx.type === 'income' ? '+' : '-')}${Number(tx.amount).toFixed(2)}€</strong>
-      </div>`).join('') : '<em>Aucune transaction</em>'
-    }
-    </div>
-    <div style="margin-top:.6em;">
-    <button id="open-quick-add" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.4em .8em;cursor:pointer;">
-    Ajouter une transaction
-    </button>
-    </div>
+      <strong>${selDateObj.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</strong>
+      <div id="day-tx-list" class="day-tx-list">
+        ${selDayTx.length === 0 ? '<div class="empty">Aucune transaction ce jour.</div>' : selDayTx.map((t) => `
+          <div class="tx-line" data-tx-id="${t.id || ''}">
+            <span class="tx-cat">${renderCategoryIconInline(t.category)}</span>
+            <span class="tx-desc">${t.description || ''}</span>
+            <span class="tx-amt ${Number(t.amount) < 0 ? 'neg' : 'pos'}">${formatAmount(t.amount)}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="margin-top:.5rem; display:flex; gap:.5rem; flex-wrap:wrap;">
+        <button id="open-quick-add" style="background:#27524b;color:#fff;border:none;border-radius:6px;padding:.4em .8em;cursor:pointer;">Ajouter une transaction</button>
+        ${selDayTx.length ? `<button id="open-edit-menu" style="background:#324a52;color:#fff;border:none;border-radius:6px;padding:.4em .8em;cursor:pointer;">Modifier une transaction</button>` : ''}
+      </div>
+      <div id="edit-picker" style="display:none;"></div>
     `;
 
-    // NEW: gestion de la sélection visuelle + mémorisation de l'id
-    selectedTxId = null; // reset à chaque jour cliqué
+    // sélection visuelle dans la liste
+    selectedTxId = null;
     const listEl = details.querySelector('#day-tx-list');
-
-    // Auto-sélection de la première ligne si présente
     const firstLine = listEl?.querySelector('.tx-line');
-    if (firstLine) {
-      firstLine.classList.add('is-selected');
-      selectedTxId = firstLine.dataset.txId;
+    if (firstLine) { firstLine.classList.add('is-selected'); selectedTxId = firstLine.dataset.txId; }
+    listEl?.querySelectorAll('.tx-line')?.forEach(n =>
+      n.addEventListener('click', () => {
+        selectedTxId = n.dataset.txId || null;
+        listEl.querySelectorAll('.tx-line').forEach(m => (m.style.background = ''));
+        n.style.background = 'rgba(39, 82, 75, 0.1)';
+      })
+    );
+
+    // Bouton Ajouter
+    const btnAdd = document.getElementById('open-quick-add');
+    if (btnAdd) btnAdd.onclick = () => openQuickAddForDate(dateIso);
+
+  // Bouton "Modifier" -> modale de choix (délégué, persistant)
+  details.addEventListener('click', function onEditClick(e){
+    const b = e.target.closest('#open-edit-menu');
+    if (!b) return;
+    e.preventDefault();
+    openEditChoiceForDate(selectedDate);
+  });
+
+    function showEditPicker(list) {
+      const host = document.getElementById('edit-picker');
+      if (!host) return;
+      host.style.display = 'block';
+      host.innerHTML = `
+        <div style="margin-top:.5rem;padding:.6rem;border:1px solid var(--color-primary,#65b8f7);border-radius:8px;background:var(--color-surface,#fff);box-shadow:0 2px 8px rgba(0,0,0,.08);max-width:520px;">
+          <div style="font-weight:600;margin-bottom:.4rem;">Quelle transaction modifier ?</div>
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
+            <select id="ep-select" style="flex:1 1 260px;padding:.35rem;border:1px solid #9fb9c6;border-radius:6px;">
+              ${list.map(t => `
+                <option value="${t.id}">
+                  ${formatAmount(t.amount)} — ${ (t.description||'').toString().slice(0,60) }
+                </option>
+              `).join('')}
+            </select>
+            <button id="ep-edit"   style="background:#324a52;color:#fff;border:none;border-radius:6px;padding:.4em .8em;cursor:pointer;">Éditer</button>
+            <button id="ep-cancel" style="background:#888;color:#fff;border:none;border-radius:6px;padding:.4em .8em;cursor:pointer;">Annuler</button>
+          </div>
+        </div>
+      `;
+      const sel = host.querySelector('#ep-select');
+      host.querySelector('#ep-edit')  .onclick = () => { tryOpenEdit(sel?.value); host.style.display='none'; };
+      host.querySelector('#ep-cancel').onclick = () => { host.style.display='none'; };
     }
+  }
 
-    // Gestion du clic manuel sur les lignes
-    listEl?.querySelectorAll('.tx-line').forEach(el => {
-      el.addEventListener('click', () => {
-        listEl.querySelectorAll('.tx-line').forEach(n => n.classList.remove('is-selected'));
-        el.classList.add('is-selected');
-        selectedTxId = el.dataset.txId;
-      });
-    });
+  // initial : détails du jour courant
+  renderDayDetails(selectedDate);
 
-    // (facultatif) style inline si tu préfères éviter le CSS
-    const styleSelected = 'rgba(101,184,247,0.20)';
-    listEl?.querySelectorAll('.tx-line').forEach(n => n.addEventListener('click', () => {
-      listEl.querySelectorAll('.tx-line').forEach(m => m.style.background = '');
-      n.style.background = styleSelected;
-    }));
+  // --- Gestion clic vs double-clic (anti-conflit)
+  let clickTimer = null;
 
-    const btn = document.getElementById('open-quick-add');
-    if (btn) btn.onclick = () => openQuickAddForDate(selectedDate);
-  };
-
-    // DOUBLE‑CLICK : ouvre directement la modale
-    table.ondblclick = (e) => {
-      const td = e.target.closest('td[data-date]');
-      if (!td) return;
+  table.addEventListener('click', (e) => {
+    const td = e.target.closest('td[data-date]');
+    if (!td) return;
+    if (clickTimer) clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => {
       selectedDate = td.getAttribute('data-date');
-      openQuickAddForDate(selectedDate);
-    };
+      table.querySelectorAll('td.selected').forEach(n => n.classList.remove('selected'));
+      td.classList.add('selected');
+      renderDayDetails(selectedDate);
+      clickTimer = null;
+    }, 220);
+  });
+
+  table.addEventListener('dblclick', (e) => {
+    const td = e.target.closest('td[data-date]');
+    if (!td) return;
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+    selectedDate = td.getAttribute('data-date');
+    openQuickAddForDate(selectedDate);
+  });
 }
 
 // ===== Sélecteur annuel de mois =====
@@ -1077,29 +1184,40 @@ function setupMonthPicker() {
 // Rendu d’une icône de catégorie inline (pour listes)
 function renderCategoryIconInline(cat) {
   const val = String(cat || '').trim();
-  if (!val) return `<i class="fa-regular fa-circle-question" aria-hidden="true"></i>`;
+  // Fallback par défaut : point d’interrogation FA (pas de Material Icons)
+  const FALLBACK = `<i class="fa-regular fa-circle-question" aria-hidden="true"></i>`;
+  if (!val) return FALLBACK;
 
-  // 1) Ancien format set::name
+  // Ancien format set::name
   if (val.includes('::')) {
     const [set, name] = val.split('::');
     if (set === 'fa') return `<i class="${name}" aria-hidden="true"></i>`;
-    if (set === 'mi') return `<span class="material-icons" aria-hidden="true">${name}</span>`;
     if (set === 'bs') return `<i class="bi ${name}" aria-hidden="true"></i>`;
+    // on ne rend plus "mi" (Material Icons) pour éviter du texte brut
+    return FALLBACK;
   }
 
-  // 2) Nouveau format: classes directes
-  // Font Awesome : contient "fa-"
+  // Nouvelles classes directes
   if (/\bfa-/.test(val)) {
-    return `<i class="${val}" aria-hidden="true"></i>`;
+    // Ensure a Font Awesome style prefix exists (fa-solid, fa-regular, etc.).
+    // Some stored values only contain the icon name (e.g. "fa-basket-shopping").
+    // In that case prepend the default weight so icons render consistently.
+    let cls = String(val).trim();
+    if (!/\bfa-(solid|regular|light|thin|duotone|brands)\b/i.test(cls)) {
+      cls = `fa-solid ${cls}`;
+    }
+    return `<i class="${cls}" aria-hidden="true"></i>`;
   }
-  // Bootstrap Icons : "bi ..." ou "bi-..."
-  if (/^bi\b/.test(val) || /\bbi-/.test(val)) {
+  if (/^bi\b/.test(val) || /\bbi-/.test(val)) {                                      // Bootstrap Icons
     const cls = val.startsWith('bi ') ? val : (val.startsWith('bi-') ? `bi ${val}` : val);
     return `<i class="${cls}" aria-hidden="true"></i>`;
   }
 
-  // 3) Fallback : on considère un nom Material Icons
-  return `<span class="material-icons" aria-hidden="true">${val}</span>`;
+  // Si c'est un symbole isolé ou un nom inconnu -> fallback FA
+  if (!/^[a-z][a-z0-9_-]{2,}$/i.test(val)) return FALLBACK;
+
+  // Par sécurité, on évite d’afficher du texte brut => fallback
+  return FALLBACK;
 }
 
 // ===============================
@@ -1109,8 +1227,9 @@ function renderTransactionList() {
   const ul = document.getElementById('transactions-list');
   if (!ul) return;
 
-  // ---- Où trouver les transactions ?
+  // ---- Où trouver les transactions ? (PRIORITÉ: transactions -> window.transactions -> autres)
   function getTxs() {
+    try { if (Array.isArray(transactions) && transactions.length) return transactions; } catch(_) {}
     try { if (Array.isArray(window.transactions) && window.transactions.length) return window.transactions; } catch(_) {}
     try { if (Array.isArray(window.allTransactions) && window.allTransactions.length) return window.allTransactions; } catch(_) {}
     try { if (Array.isArray(window.txs) && window.txs.length) return window.txs; } catch(_) {}
@@ -1176,7 +1295,7 @@ function renderTransactionList() {
     right.style.marginLeft = 'auto';
     right.innerHTML = `${fmtDate(tx.date || tx.day)} — <strong>${sign(tx.type, tx.amount)}${num(tx.amount)}€</strong>`;
 
-    // Bouton Éditer (clic direct -> openEditModal)
+    // Bouton Éditer
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.title = 'Modifier';
@@ -1191,13 +1310,13 @@ function renderTransactionList() {
       e.preventDefault();
       e.stopPropagation();
       const fn = (typeof window.openEditModal === 'function') ? window.openEditModal
-      : (typeof openEditModal === 'function') ? openEditModal
-      : null;
+               : (typeof openEditModal === 'function') ? openEditModal
+               : null;
       if (!fn) { console.warn('openEditModal indisponible'); return; }
       fn(id);
     }, false);
 
-    // Bouton Supprimer (simple)
+    // Bouton Supprimer
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.title = 'Supprimer';
@@ -1214,31 +1333,25 @@ function renderTransactionList() {
       e.stopPropagation();
       if (!confirm('Supprimer cette transaction ?')) return;
 
-      // Essaie de supprimer dans la source globale
       try {
-        if (Array.isArray(window.transactions)) {
+        if (Array.isArray(transactions)) {
+          const i = transactions.findIndex(t => String(t.id || t._id || t.uuid) === String(id));
+          if (i >= 0) transactions.splice(i, 1);
+          // reflète vers window + stockage
+          window.transactions = transactions;
+          localStorage.setItem('transactions', JSON.stringify(transactions));
+        } else if (Array.isArray(window.transactions)) {
           const i = window.transactions.findIndex(t => String(t.id || t._id || t.uuid) === String(id));
           if (i >= 0) window.transactions.splice(i, 1);
           localStorage.setItem('transactions', JSON.stringify(window.transactions));
-        } else {
-          // fallback localStorage
-          const s = localStorage.getItem('transactions');
-          if (s) {
-            const arr = JSON.parse(s);
-            const j = arr.findIndex(t => String(t.id || t._id || t.uuid) === String(id));
-            if (j >= 0) {
-              arr.splice(j, 1);
-              localStorage.setItem('transactions', JSON.stringify(arr));
-            }
-          }
         }
       } catch(_) {}
 
       renderTransactionList();
       document.dispatchEvent(new Event('transactions:changed'));
+      if (typeof updateViews === 'function') updateViews();
     }, false);
 
-    // Assemblage
     li.appendChild(left);
     li.appendChild(right);
     li.appendChild(editBtn);
@@ -1278,9 +1391,34 @@ function getStatsRange() {
 // ====== STATS ======
 let pieChart;
 function renderStats() {
-  const canvas = document.getElementById('pie-chart');
+
+let statsCanvas = document.getElementById('stats-canvas');
+
+// Si l'élément existe mais n'est pas un vrai <canvas>, on le remplace.
+if (!(statsCanvas instanceof HTMLCanvasElement)) {
+  const replacement = document.createElement('canvas');
+  replacement.id = 'stats-canvas';
+
+  if (statsCanvas && statsCanvas.parentNode) {
+    statsCanvas.parentNode.replaceChild(replacement, statsCanvas);
+  } else {
+    // fallback si pas de parent connu : on l'ajoute au container #pie-chart si présent
+    // cela évite que le canvas prenne la largeur totale du body (ex: 1920px)
+    const preferredContainer = document.getElementById('pie-chart') || document.getElementById('stats-section') || document.body;
+    // Ensure canvas scales with the container
+    replacement.style.width = '100%';
+    // let Chart.js compute the pixel backing store based on devicePixelRatio
+    preferredContainer.appendChild(replacement);
+  }
+  statsCanvas = replacement;
+}
+
+const ctx = statsCanvas.getContext('2d');
+if (!ctx) return;
+  const canvasEl = statsCanvas; // on utilise le <canvas id="stats-canvas">
   const info = document.getElementById('stats-info');
-  if (!canvas || !info) return;
+  if (!canvasEl || !info) return;
+
 
   const { startIso, endIso, label } = getStatsRange();
 
@@ -1302,7 +1440,7 @@ function renderStats() {
     info.textContent = 'Stats indisponibles (Chart.js non chargé)';
     return;
   }
-  pieChart = new Chart(canvas.getContext('2d'), {
+  pieChart = new Chart(canvasEl.getContext('2d'), {
     type: 'pie',
     data: { labels, datasets: [{ data: values }] },
     options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
@@ -1440,13 +1578,15 @@ function renderMonthSummary() {
 // ====== Formulaires ======
 async function addTransaction(ev) {
   ev.preventDefault();
+
   const type = document.getElementById('type').value;
-  const category = document.getElementById('category').value || (typeof DEFAULT_CATEGORY !== 'undefined' ? DEFAULT_CATEGORY : 'Autre');
+  const category = document.getElementById('category').value || (typeof DEFAULT_CATEGORY !== 'undefined' ? DEFAULT_CATEGORY : 'autre');
   const description = document.getElementById('description').value.trim();
   const amount = Number(document.getElementById('amount').value);
-  const dateISO = typeof readDateInput === 'function' ? readDateInput('date') : (document.getElementById('date').value || '').trim();
+  const dateISO = (typeof readDateInput === 'function') ? readDateInput('date') : (document.getElementById('date').value || '').trim();
+
   const recurrence = document.getElementById('recurrence')?.value || 'none';
-  const untilISO = typeof readDateInput === 'function' ? readDateInput('recurrence-end') : (document.getElementById('recurrence-end')?.value || '').trim();
+  const untilISO = (typeof readDateInput === 'function') ? readDateInput('recurrence-end') : (document.getElementById('recurrence-end')?.value || '').trim();
   const installmentsEl = document.getElementById('installments');
   const installments = installmentsEl ? Number(installmentsEl.value || 0) : 0;
   const applyPrev = document.getElementById('apply-previous')?.checked || false;
@@ -1462,31 +1602,35 @@ async function addTransaction(ev) {
   if (recurrence === 'installments' && installments > 1) tx.installments = installments;
   if (recurrence !== 'none' && untilISO) tx.until = untilISO;
 
-  // Ajoute la transaction en mémoire
-  if (!Array.isArray(window.transactions)) window.transactions = [];
-  window.transactions.push(tx);
+  // ✅ Source unique : on pousse dans "transactions"
+  if (!Array.isArray(transactions)) transactions = [];
+  transactions.push(tx);
 
-  // Sauvegarde prioritaire : dossier local (si choisi) > Dropbox (si connecté) > Local navigateur
+  // ✅ Reflect: garde window.transactions pointant sur le même tableau
+  window.transactions = transactions;
+
+  // ✅ Persistance (respecte tes modes si dispo)
   try {
-    if (window.__folderDirHandle && typeof saveTransactionsFolder === 'function') {
+    if (typeof persistTransactions === 'function') {
+      await persistTransactions();
+    } else if (window.__folderDirHandle && typeof saveTransactionsFolder === 'function') {
       await saveTransactionsFolder();
     } else if (typeof isDropboxConnected === 'function' && isDropboxConnected() && typeof saveTransactionsDropbox === 'function') {
       await saveTransactionsDropbox();
     } else if (typeof saveTransactionsLocal === 'function') {
       saveTransactionsLocal();
     } else {
-      // fallback minimaliste
-      localStorage.setItem('transactions', JSON.stringify(window.transactions));
+      localStorage.setItem('transactions', JSON.stringify(transactions));
     }
   } catch (e) {
     console.warn('[persist] échec principal → copie locale', e);
-    try { localStorage.setItem('transactions', JSON.stringify(window.transactions)); } catch(_) {}
+    try { localStorage.setItem('transactions', JSON.stringify(transactions)); } catch(_) {}
   }
 
-  // Rafraîchit l’UI
+  // ✅ Rafraîchit l’UI (calendrier + historique + stats + récap)
   if (typeof updateViews === 'function') updateViews();
 
-  // Reset du formulaire
+  // Reset du formulaire + lignes conditionnelles
   ev.target.reset?.();
   const ap = document.getElementById('apply-previous-row'); if (ap) ap.style.display = 'none';
   const re = document.getElementById('recurrence-end-row'); if (re) re.style.display = 'none';
@@ -1622,7 +1766,7 @@ document.getElementById('edit-transaction-form')?.addEventListener('submit', (ev
 });
 
 // ====== Modale Ajout rapide ======
-document.getElementById('add-transaction-form')?.addEventListener('submit', function(e){
+document.getElementById('add-transaction-form')?.addEventListener('submit', async function(e){
   e.preventDefault();
 
   const description = document.getElementById('add-description').value.trim();
@@ -1642,21 +1786,43 @@ document.getElementById('add-transaction-form')?.addEventListener('submit', func
   }
 
   const baseTx = {
-    id: crypto.randomUUID(),
-                                                                  type, category, description, amount,
-                                                                  date: dateISO,
-                                                                  recurrence: recurrence || 'none',
-                                                                  applyPrev: applyPrev || false
+    id: (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+    type, category, description, amount,
+    date: dateISO,
+    recurrence: recurrence || 'none',
+    applyPrev: applyPrev || false
   };
   if (untilDateISO) baseTx.until = untilDateISO;
   if (baseTx.recurrence === 'installments' && installments >= 2) {
     baseTx.installments = installments;
   }
 
+  // ✅ Source unique
+  if (!Array.isArray(transactions)) transactions = [];
   transactions.push(baseTx);
-  saveTransactionsLocal();
-  if (isDropboxConnected()) saveTransactionsDropbox();
-  updateViews();
+
+  // ✅ Reflect
+  window.transactions = transactions;
+
+  // ✅ Persistance (mêmes priorités)
+  try {
+    if (typeof persistTransactions === 'function') {
+      await persistTransactions();
+    } else if (window.__folderDirHandle && typeof saveTransactionsFolder === 'function') {
+      await saveTransactionsFolder();
+    } else if (typeof isDropboxConnected === 'function' && isDropboxConnected() && typeof saveTransactionsDropbox === 'function') {
+      await saveTransactionsDropbox();
+    } else if (typeof saveTransactionsLocal === 'function') {
+      saveTransactionsLocal();
+    } else {
+      localStorage.setItem('transactions', JSON.stringify(transactions));
+    }
+  } catch (e) {
+    console.warn('[persist] échec principal → copie locale', e);
+    try { localStorage.setItem('transactions', JSON.stringify(transactions)); } catch(_) {}
+  }
+
+  if (typeof updateViews === 'function') updateViews();
   document.getElementById('modal-add-transaction').style.display = 'none';
 });
 
@@ -1682,7 +1848,168 @@ document.getElementById('export-json')?.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+/* ====== Import ====== */
+(() => {
+  const importBtn   = document.getElementById('import-json');
+  const importInput = document.getElementById('import-json-file');
+
+  importBtn?.addEventListener('click', () => importInput?.click());
+
+  importInput?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const txt = await file.text();
+      let data = JSON.parse(txt);
+
+      // Autorise { transactions: [...] } ou directement [...]
+      if (data && typeof data === 'object' && !Array.isArray(data) && Array.isArray(data.transactions)) {
+        data = data.transactions;
+      }
+      if (!Array.isArray(data)) throw new Error('Le fichier ne contient pas une liste de transactions.');
+
+      // Normalisation + validation
+      const allowedRec = new Set(['none','monthly','yearly','installments']);
+      const norm = [];
+      for (const raw of data) {
+        if (!raw) continue;
+
+        const t = {};
+        t.id = String(raw.id ?? '');
+        if (!t.id) {
+          t.id = (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + Math.random().toString(16).slice(2));
+        }
+        t.type = raw.type === 'income' ? 'income' : 'expense';
+        t.category = String(raw.category ?? '').trim() || 'autre';
+        t.description = String(raw.description ?? '').trim() || '(sans libellé)';
+
+        const amt = Number(raw.amount);
+        if (!isFinite(amt)) continue;
+        t.amount = Math.round(amt * 100) / 100;
+
+        const iso = normalizeToISO(String(raw.date ?? '').trim());
+        if (!iso) continue;
+        t.date = iso;
+
+        const rec = String(raw.recurrence ?? 'none').toLowerCase();
+        t.recurrence = allowedRec.has(rec) ? rec : 'none';
+
+        if (t.recurrence === 'installments') {
+          const n = Number(raw.installments || 0);
+          if (n >= 2) t.installments = n;
+        }
+        if (raw.until) {
+          const uiso = normalizeToISO(String(raw.until));
+          if (uiso) t.until = uiso;
+        }
+        if (typeof raw.applyPrev === 'boolean') t.applyPrev = !!raw.applyPrev;
+
+        norm.push(t);
+      }
+
+      if (!norm.length) throw new Error('Aucune transaction valide trouvée dans ce fichier.');
+
+      // Fusion ou remplacement
+      const existing = Array.isArray(transactions) ? transactions : [];
+      let newList;
+      if (existing.length) {
+        const doMerge = confirm(
+          `Importer ${norm.length} transaction(s).\n\n` +
+          `OK = fusionner (déduplication automatique)\n` +
+          `Annuler = remplacer entièrement (écraser mes ${existing.length} transaction(s))`
+        );
+        newList = doMerge ? mergeTransactions(existing, norm) : norm;
+      } else {
+        newList = norm;
+      }
+
+      // Application + persistance
+      transactions = newList;
+      window.transactions = transactions;
+      try { await persistTransactions(); } catch { saveTransactionsLocal(); }
+
+      // Rafraîchissement UI
+      window.dispatchEvent(new Event('transactions-updated'));
+      if (typeof updateViews === 'function') updateViews();
+
+      alert(`Import terminé : ${transactions.length} transaction(s) au total.`);
+    } catch (err) {
+      console.error('Import JSON — erreur :', err);
+      alert(`Échec de l’import : ${err.message || err}`);
+    } finally {
+      if (importInput) importInput.value = ''; // réarme le <input>
+    }
+  });
+
+  // Helpers
+  function normalizeToISO(s) {
+    // Accepte 'YYYY-MM-DD' / 'DD-MM-YYYY' / 'YYYY/MM/DD' / 'DD.MM.YYYY'
+    const clean = s.replace(/[./]/g, '-');
+    const m1 = clean.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m1) {
+      const [_, y, m, d] = m1.map(Number);
+      const dt = new Date(y, m - 1, d);
+      if (!isNaN(dt)) return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      return null;
+    }
+    const m2 = clean.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m2) {
+      const d = Number(m2[1]), m = Number(m2[2]), y = Number(m2[3]);
+      const dt = new Date(y, m - 1, d);
+      if (!isNaN(dt)) return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    }
+    return null;
+  }
+
+  function mergeTransactions(existing, imported) {
+    const byId = new Map();
+    for (const t of existing) if (t && t.id) byId.set(String(t.id), t);
+
+    const key = t => `${t.date}|${t.type}|${t.description}|${t.amount}|${t.category}`;
+    const set2 = new Map(existing.map(t => [key(t), t]));
+
+    for (const it of imported) {
+      if (it.id && byId.has(String(it.id))) {
+        byId.set(String(it.id), it); // remplace par la version importée
+        continue;
+      }
+      const k = key(it);
+      if (!set2.has(k)) set2.set(k, it);
+    }
+
+    const merged = (byId.size ? Array.from(byId.values()) : Array.from(set2.values()));
+    merged.sort((a,b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.description||'').localeCompare(b.description||'')));
+    return merged;
+  }
+})();
+
 function updateViews() {
+  // 🔒 Garde-fou de synchronisation des données
+  try {
+    // 1) Si "transactions" est vide, on essaie d'abord window.transactions, sinon localStorage
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      if (Array.isArray(window.transactions) && window.transactions.length) {
+        transactions = window.transactions;               // ← même référence que l'historique
+      } else {
+        const raw = localStorage.getItem('transactions'); // ← fallback démarrage
+        const arr = raw ? JSON.parse(raw) : [];
+        window.transactions = arr;
+        transactions = arr;                               // ← aligne le calendrier
+      }
+    } else {
+      // 2) Si "transactions" a des données, on reflète vers window.transactions pour l'historique
+      if (!Array.isArray(window.transactions) || window.transactions !== transactions) {
+        window.transactions = transactions;
+      }
+    }
+  } catch (_) {
+    // sécurité absolue
+    if (!Array.isArray(transactions)) transactions = [];
+    window.transactions = transactions;
+  }
+
+  // 🔁 Rendus
   renderCalendar();
   renderTransactionList();
   renderStats();
@@ -1787,75 +2114,21 @@ document.addEventListener('DOMContentLoaded', () => {
     restoreMicrosoftSession();
 
     const hasDropboxSDK = !!(window.Dropbox && Dropbox.Dropbox);
-
-    function ensureEssentialDom() {
-      const need = ['current-month','calendar','day-details','stats-period','pie-chart','stats-info','transactions-list','month-tx-list','prev-month','next-month','go-today','theme-toggle'];
-      const missing = need.filter(id => !document.getElementById(id));
-      if (!missing.length) return;
-
-      // conteneur cible
-      const root = document.getElementById('app') || document.body;
-
-      // Header calendrier
-      if (!document.getElementById('theme-toggle')) {
-        const t = document.createElement('button'); t.id='theme-toggle'; t.textContent='🌓'; root.appendChild(t);
-      }
-      if (!document.getElementById('current-month')) {
-        const bar = document.createElement('div'); bar.style.cssText='display:flex;gap:8px;align-items:center;margin:8px 0;';
-        bar.innerHTML = `
-        <button id="prev-month">◀</button>
-        <strong id="current-month" style="min-width:200px;display:inline-block"></strong>
-        <button id="next-month">▶</button>
-        <button id="go-today">Aujourd’hui</button>
-        `;
-        root.appendChild(bar);
-      }
-      if (!document.getElementById('calendar')) {
-        const t = document.createElement('table'); t.id='calendar'; t.style.cssText='width:100%;border-collapse:collapse;'; root.appendChild(t);
-      }
-      if (!document.getElementById('day-details')) {
-        const d = document.createElement('div'); d.id='day-details'; d.style.marginTop='8px'; root.appendChild(d);
-      }
-
-      // Stats
-      if (!document.getElementById('stats-period')) {
-        const wrap = document.createElement('div'); wrap.style.marginTop='16px';
-        wrap.innerHTML = `
-        <label for="stats-period">Période :</label>
-        <select id="stats-period">
-        <option value="day">Jour</option>
-        <option value="month" selected>Mois</option>
-        <option value="year">Année</option>
-        </select>
-        <div style="display:flex;align-items:center;gap:16px;margin-top:8px;">
-        <canvas id="pie-chart" width="280" height="280"></canvas>
-        <div id="stats-info"></div>
-        </div>
-        `;
-        root.appendChild(wrap);
-      }
-
-      // Liste + récap
-      if (!document.getElementById('transactions-list')) {
-        const h = document.createElement('h3'); h.textContent='Transactions'; root.appendChild(h);
-        const ul = document.createElement('ul'); ul.id='transactions-list'; root.appendChild(ul);
-      }
-      if (!document.getElementById('month-tx-list')) {
-        const h = document.createElement('h3'); h.textContent='Récapitulatif'; root.appendChild(h);
-        const ctr = document.createElement('div');
-        ctr.innerHTML = `
-        <button id="month-sort-btn" title="Changer tri"><i id="month-sort-icon" class="fa-solid fa-calendar-day"></i></button>
-        <label style="margin-left:8px;"><input type="checkbox" id="group-by-category"> Grouper par catégorie</label>
-        <ul id="month-tx-list"></ul>
-        `;
-        root.appendChild(ctr);
-      }
-
-      console.warn('[Bootstrap UI] éléments manquants injectés:', missing);
-    }
+// Legacy-free: ne crée plus le vieux bouton thème et ne log rien
+function ensureEssentialDom() {
+  // On vérifie juste que les éléments essentiels existent, sans rien injecter
+  // (exclut volontairement 'theme-toggle' qui est désormais remplacé)
+  const need = ['current-month','calendar','day-details','month-tx-list','prev-month','next-month','go-today'];
+  const missing = need.filter(id => !document.getElementById(id));
+  if (!missing.length) return;
+  // Pas d’injection ni de console.warn : ton HTML les fournit déjà dans index.html
+}
 
     // …dans ton init:
 ensureEssentialDom();
+// Supprime l'ancien bouton thème (fallback) s'il a été injecté
+const legacy = document.getElementById('theme-toggle');
+if (legacy) legacy.remove();
 
 (async () => {
   let loaded = false;
@@ -1863,13 +2136,13 @@ ensureEssentialDom();
   try {
     // 1) On tente de restaurer le dossier choisi (si permission toujours OK)
     if (await restoreFolderHandles()) {
-      await loadTransactionsFolder();
+      await loadTransactionsFolder(); // (inner) remplit window.transactions
       loaded = true;
     }
 
     // 2) Sinon Dropbox si dispo et connecté
     if (!loaded && typeof isDropboxConnected === 'function' && isDropboxConnected() && typeof loadTransactionsDropbox === 'function') {
-      await loadTransactionsDropbox();
+      await loadTransactionsDropbox(); // (outer) peut remplir transactions
       loaded = true;
     }
 
@@ -1892,6 +2165,19 @@ ensureEssentialDom();
     }
   }
 
+  // 🔗 SYNC DE RÉFÉRENCE (critique pour le calendrier)
+  // - Si window.transactions existe => on pointe transactions dessus.
+  // - Sinon, si transactions existe => on reflète dans window.transactions.
+  // - Sinon, on crée un tableau partagé vide.
+  if (Array.isArray(window.transactions)) {
+    transactions = window.transactions;
+  } else if (Array.isArray(transactions)) {
+    window.transactions = transactions;
+  } else {
+    transactions = window.transactions = [];
+  }
+
+  // Rafraîchit TOUT (calendrier + historique + stats + récap)
   if (typeof updateViews === 'function') updateViews();
 
   // Statuts services
@@ -1995,6 +2281,9 @@ function idbDel(key) {
   }));
 }
 
+  }); // fin setupAuthentication(...)
+});   // fin document.addEventListener('DOMContentLoaded', ...)
+
 // Handles globaux FSA
 window.__folderDirHandle  = window.__folderDirHandle  || null;
 window.__folderFileHandle = window.__folderFileHandle || null;
@@ -2093,6 +2382,11 @@ document.getElementById('google-login')  ?.addEventListener('click', loginGoogle
 document.getElementById('google-logout') ?.addEventListener('click', logoutGoogle);
 document.getElementById('ms-login')      ?.addEventListener('click', loginMS);
 document.getElementById('ms-logout')     ?.addEventListener('click', logoutMS);
+
+// Configuration des clés clientes (icône engrenage)
+document.getElementById('dropbox-config')?.addEventListener('click', configureDropboxClient);
+document.getElementById('google-config') ?.addEventListener('click', configureGoogleClient);
+document.getElementById('ms-config')     ?.addEventListener('click', configureMSClient);
 
 // Dossier local : choisir et charger
 document.getElementById('pick-folder-btn')?.addEventListener('click', async () => {
@@ -2251,16 +2545,1064 @@ updateFolderStatus();
       syncEditRows();
     }
 
-    // Navigation multi‑modules
-    document.querySelectorAll('.app-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.app-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.app-section').forEach(sec => sec.style.display = 'none');
-        btn.classList.add('active');
-        document.getElementById(`app-${btn.dataset.app}`).style.display = 'block';
-      });
-    });
+    // Navigation multi-modules (mémoire + hash + hooks init/destroy)
+(() => {
+  // Éléments UI publiés sur window (utiles ailleurs)
+  window.APP_BTNS = Array.from(document.querySelectorAll('.app-btn'));
+  window.SECTIONS = Array.from(document.querySelectorAll('.app-section'));
+  window.ALLOWED  = new Set(window.APP_BTNS.map(b => b.dataset.app));
 
+  // Registre des hooks par application
+  const APP_HOOKS = Object.create(null);
+  window.registerApp = function(name, hooks) {
+    APP_HOOKS[name] = {
+      init:    (hooks && typeof hooks.init    === 'function') ? hooks.init    : () => {},
+      destroy: (hooks && typeof hooks.destroy === 'function') ? hooks.destroy : () => {}
+    };
+  };
+
+  let currentApp = null;
+
+  function activateApp(app) {
+    if (!window.ALLOWED.has(app)) app = window.APP_BTNS[0]?.dataset.app || 'finance';
+
+    // 1) Débranche l’ancienne app
+    if (currentApp && currentApp !== app) {
+      try { APP_HOOKS[currentApp]?.destroy(); } catch (e) { console.warn(e); }
+    }
+
+    // 2) UI: boutons + sections
+    window.APP_BTNS.forEach(b => b.classList.toggle('active', b.dataset.app === app));
+    window.SECTIONS.forEach(sec => { sec.style.display = 'none'; });
+    const target = document.getElementById(`app-${app}`);
+    if (target) target.style.display = 'block';
+
+    // 3) Persistance + hash
+    try { localStorage.setItem('app:last', app); } catch {}
+    try { history.replaceState(null, '', '#' + app); } catch { location.hash = app; }
+
+    // 4) Init de la nouvelle app
+    if (currentApp !== app) {
+      try { APP_HOOKS[app]?.init(document.getElementById(`app-${app}`)); } catch (e) { console.warn(e); }
+      currentApp = app;
+    }
+  }
+  window.activateApp = activateApp;
+
+  // Clics barre d’applis
+  window.APP_BTNS.forEach(btn =>
+    btn.addEventListener('click', () => activateApp(btn.dataset.app))
+  );
+
+  // Choix initial: hash > localStorage > premier bouton
+  const rawHash = (location.hash || '').replace(/^#/, '');
+  const fromHash = rawHash.startsWith('app=') ? rawHash.slice(4) : rawHash;
+  let start = window.ALLOWED.has(fromHash) ? fromHash : null;
+  if (!start) {
+    try { const saved = localStorage.getItem('app:last'); if (window.ALLOWED.has(saved)) start = saved; } catch {}
+  }
+  if (!start) start = window.APP_BTNS[0]?.dataset.app || 'finance';
+
+  // Lancement
+  activateApp(start);
+})(); // <-- fermeture correcte de l’IIFE
+
+      // Clics barre d’applis
+      APP_BTNS.forEach(btn => btn.addEventListener('click', () => activateApp(btn.dataset.app)));
+
+      // Choix initial: hash > localStorage > premier bouton
+      const rawHash = (location.hash || '').replace(/^#/, '');
+      const fromHash = rawHash.startsWith('app=') ? rawHash.slice(4) : rawHash;
+      let start = ALLOWED.has(fromHash) ? fromHash : null;
+      if (!start) {
+        try { const saved = localStorage.getItem('app:last'); if (ALLOWED.has(saved)) start = saved; } catch {}
+      }
+      if (!start) start = APP_BTNS[0]?.dataset.app || 'finance';
+
+      // Hooks par défaut (tu pourras les étoffer plus tard)
+      registerApp('finance', { init() { /* logic déjà en place */ }, destroy() {} });
+      registerApp('agenda', (function(){
+        // ======= CONFIG / CONSTANTES =======
+        const ORG_PREFIX = 'MultiappOrg · ';          // Prefix des agendas Google
+        const GCAL_SCOPES = 'openid email profile https://www.googleapis.com/auth/calendar';
+        const GCAL_API    = 'https://www.googleapis.com/calendar/v3';
+
+        // LocalStorage
+        const LS_EVENTS       = 'agenda:events:multiorg:v1';    // [{id, cal, date, title, gid?}]
+        const LS_VISIBLE      = 'agenda:visible:multiorg:v1';   // [calKey...]
+        const LS_SELECTED_ORG = 'agenda:selectedOrgs:v1';       // [orgName...]
+        const LS_G_TOKEN      = 'agenda:gcal:token';
+        const LS_G_GRANTED    = 'agenda:gcal:granted';
+
+        // ======= ETAT UI / DONNEES =======
+        let container, grid, monthLbl, btnPrev, btnNext, btnToday;
+        let whoSel, filtersWrap, quickForm, quickCal, quickTitle, quickAdd, dayTitle, dayList, dayEmpty;
+
+        // Google UI
+        let statusEl, btnConnect, btnLogout;
+        let orgNameInp, orgMembersInp, orgCreateBtn, orgCreatePersonals, orgSendInvites, orgRefreshBtn;
+        let orgOwnedList, orgSharedList, orgImportBtn, orgImportPrimaryBtn;
+
+        // Etat calendrier
+        let currentMonth = new Date(); currentMonth.setDate(1);
+        let selectedDay = null;
+        let events = [];                 // évènements locaux (affichage)
+        let visible = new Set();         // calKeys visibles
+
+        // Multi-organisations (détectées sur Google)
+        let orgsOwned = [];              // [{name, generalId, members:[{email, calId}], color}]
+        let orgsShared = [];             // idem
+        let selectedOrgs = new Set();    // noms d'org cochées
+        let accessToken = null;
+
+      // ======= HELPERS GÉNÉRIQUES =======
+      function pad2(n){ return String(n).padStart(2,'0'); }
+      function ymd(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+      function todayYMD(){ return ymd(new Date()); }
+      function parseYMD(s){ const m = String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m? new Date(+m[1], +m[2]-1, +m[3]) : null; }
+      function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+      function esc(s){ return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+      function splitEmails(txt){
+        return String(txt||'')
+        .split(/[\s,;]+/g)
+        .map(s=>s.trim())
+        .filter(s=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s));
+      }
+          
+      // ======= PERSISTENCE =======
+      function loadAll(){
+        try{ events = JSON.parse(localStorage.getItem(LS_EVENTS)||'[]'); }catch{ events=[]; }
+        if (!Array.isArray(events)) events=[];
+        try{ const v = JSON.parse(localStorage.getItem(LS_VISIBLE)||'null'); if (Array.isArray(v)) visible = new Set(v); }catch{}
+        try{ const s = JSON.parse(localStorage.getItem(LS_SELECTED_ORG)||'null'); if (Array.isArray(s)) selectedOrgs = new Set(s); }catch{}
+      }
+      function saveEvents(){ try{ localStorage.setItem(LS_EVENTS, JSON.stringify(events)); }catch{} }
+      function saveVisible(){ try{ localStorage.setItem(LS_VISIBLE, JSON.stringify(Array.from(visible))); }catch{} }
+      function saveSelectedOrgs(){ try{ localStorage.setItem(LS_SELECTED_ORG, JSON.stringify(Array.from(selectedOrgs))); }catch{} }
+
+      // ======= PERSISTENCE ORG / INVITES (local, safe helpers) =======
+      const LS_ORGS = 'agenda:orgs:v1';                    // optional cached org metadata
+      const LS_INVITES = 'agenda:org:invites:v1';          // queued invites (pending)
+      const LS_INVITE_NOTIFS = 'agenda:org:invite-notifs:v1'; // local notifications for invite responses
+
+      function loadOrgsLS(){ try{ return JSON.parse(localStorage.getItem(LS_ORGS)||'[]'); }catch{ return []; } }
+      function saveOrgsLS(arr){ try{ localStorage.setItem(LS_ORGS, JSON.stringify(arr||[])); }catch{} }
+
+      function loadInvitesLS(){ try{ return JSON.parse(localStorage.getItem(LS_INVITES)||'[]'); }catch{ return []; } }
+      function saveInvitesLS(arr){ try{ localStorage.setItem(LS_INVITES, JSON.stringify(arr||[])); }catch{} }
+
+      function loadInviteNotifs(){ try{ return JSON.parse(localStorage.getItem(LS_INVITE_NOTIFS)||'[]'); }catch{ return []; } }
+      function saveInviteNotifs(arr){ try{ localStorage.setItem(LS_INVITE_NOTIFS, JSON.stringify(arr||[])); }catch{} }
+
+      function pushInviteNotif(n){
+        try{
+          const list = loadInviteNotifs();
+          list.unshift(Object.assign({ id: uid(), createdAt: Date.now() }, n));
+          saveInviteNotifs(list);
+          // notify UI if available
+          if (typeof renderOrgLists === 'function') renderOrgLists();
+          if (typeof renderInviteNotifs === 'function') renderInviteNotifs();
+        }catch{};
+      }
+
+      /**
+       * Queue invites locally for an organisation.
+       * - orgName: string
+       * - emails: string | string[] (comma/space separated allowed)
+       * - opts: { note?:string }
+       * This function does NOT perform Google ACL operations automatically.
+       */
+      window.__agenda_sendInvitesForOrg = async function(orgName, emails, opts){
+        try{
+          const raw = Array.isArray(emails) ? emails.join(' ') : String(emails||'');
+          const list = splitEmails(raw);
+          if (!orgName || !list.length) return { ok:false, reason:'missing' };
+          const me = (typeof whoAmI === 'function') ? (await whoAmI().catch(()=>null)) : null;
+          const from = me && me.email ? me.email : null;
+          const stored = loadInvitesLS();
+          for (const to of list){
+            const it = { id: uid(), org: orgName, email: to, from: from, status: 'pending', note: opts?.note || '', createdAt: Date.now() };
+            stored.push(it);
+            // local notification for the inviter (visible in UI)
+            pushInviteNotif({ org: orgName, email: to, from, status: 'pending' });
+          }
+          saveInvitesLS(stored);
+          // trigger a UI refresh + optional background scan
+          if (typeof scanOrganizations === 'function') scanOrganizations().catch(()=>{});
+          if (typeof renderInviteNotifs === 'function') renderInviteNotifs();
+          return { ok:true, queued: list.length };
+        }catch(e){ return { ok:false, reason: e && e.message || String(e) }; }
+      };
+
+      // ======= INVITES UI (render + handlers) =======
+      function renderInviteNotifs(){
+        try{
+          const host = document.getElementById('org-invite-notifs');
+          const listRoot = document.getElementById('org-invite-list');
+          if (!host || !listRoot) return;
+          const list = loadInviteNotifs();
+          if (!list || !list.length){ host.textContent = 'Aucune invitation.'; listRoot.innerHTML = ''; return; }
+          host.textContent = list.length + ' notification(s)';
+          listRoot.innerHTML = '';
+          list.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'row';
+            row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0;';
+            const left = document.createElement('div'); left.style.cssText='display:flex; gap:8px; align-items:center; min-width:0;';
+            left.innerHTML = `<div style="font-weight:600; overflow:hidden; text-overflow:ellipsis;">${esc(item.org || '')}</div><div class="muted" style="font-size:.9rem;">${esc(item.email||'')}</div>`;
+            const right = document.createElement('div');
+            const accept = document.createElement('button'); accept.type='button'; accept.className='btn primary'; accept.textContent='Accepter';
+            const decline = document.createElement('button'); decline.type='button'; decline.className='btn ghost'; decline.textContent='Refuser';
+            const realSend = document.createElement('button'); realSend.type='button'; realSend.className='btn'; realSend.textContent='Envoyer réel';
+
+            accept.addEventListener('click', async ()=>{
+              // Accept locally: mark visible/select org
+              // add to selectedOrgs and save
+              if (item.org) selectedOrgs.add(item.org);
+              saveSelectedOrgs();
+              // remove this notif
+              const cur = loadInviteNotifs().filter(n=>n.id!==item.id);
+              saveInviteNotifs(cur);
+              // optionally accept by creating personal calend or other (not automated)
+              renderOrgLists(); renderInviteNotifs(); buildFilters(); renderGrid(); renderDayPanel();
+            });
+
+            decline.addEventListener('click', ()=>{
+              const cur = loadInviteNotifs().filter(n=>n.id!==item.id);
+              saveInviteNotifs(cur);
+              renderInviteNotifs();
+            });
+
+            realSend.addEventListener('click', async ()=>{
+              // If connected, offer to perform real ACL send via inviteMembersToOrg
+              if (!loadSavedToken() && !accessToken){ alert('Connecte-toi à Google pour envoyer des invitations réelles.'); return; }
+              const ok = confirm('Envoyer une invitation réelle via Google Calendar (enverra un e-mail) ?');
+              if (!ok) return;
+              try{
+                await ensureToken(true);
+                // inviteMembersToOrg expects orgName field in orgNameInp, and emails in orgMembersInp
+                orgNameInp.value = item.org || '';
+                orgMembersInp.value = item.email || '';
+                await inviteMembersToOrg();
+                // mark notif handled
+                const cur = loadInviteNotifs().filter(n=>n.id!==item.id);
+                saveInviteNotifs(cur);
+                renderInviteNotifs();
+              }catch(e){ alert(e && e.message ? e.message : e); }
+            });
+
+            right.appendChild(accept); right.appendChild(decline); right.appendChild(realSend);
+            row.appendChild(left); row.appendChild(right);
+            listRoot.appendChild(row);
+          });
+        }catch(e){}
+      }
+
+      // ======= GOOGLE (auth + stockage token) =======
+      function setStatus(msg){ if (statusEl) statusEl.textContent = msg; }
+      function getClientId(){
+        const fromMeta = document.querySelector('meta[name="google-client-id"]')?.content;
+        if (fromMeta && !/REPLACE_WITH/i.test(fromMeta)) return fromMeta.trim();
+        if (typeof window.GOOGLE_CLIENT_ID === 'string' && window.GOOGLE_CLIENT_ID) return window.GOOGLE_CLIENT_ID;
+        return null;
+      }
+      function loadGisScript(){
+        return new Promise((resolve, reject)=>{
+          if (window.google?.accounts?.oauth2) return resolve();
+          const s=document.createElement('script');
+          s.src='https://accounts.google.com/gsi/client'; s.async=true; s.defer=true;
+          s.onload=()=> resolve();
+          s.onerror=()=> reject(new Error('Impossible de charger Google Identity Services'));
+          document.head.appendChild(s);
+        });
+      }
+      function saveToken(access_token, expires_in){
+        try{
+          const ttl = Math.max(60, Number(expires_in||3600)) - 30;
+          const expires_at = Date.now() + ttl*1000;
+          localStorage.setItem(LS_G_TOKEN, JSON.stringify({ access_token, expires_at }));
+        }catch{}
+      }
+      function loadSavedToken(){
+        try{
+          const obj = JSON.parse(localStorage.getItem(LS_G_TOKEN)||'null');
+          if (!obj || !obj.access_token || !obj.expires_at) return null;
+          if (obj.expires_at <= Date.now()) return null;
+          accessToken = obj.access_token;
+          return accessToken;
+        }catch{ return null; }
+      }
+      function clearSavedToken(){ try{ localStorage.removeItem(LS_G_TOKEN); }catch{} accessToken=null; }
+      function markGranted(flag){ try{ localStorage.setItem(LS_G_GRANTED, flag?'1':'0'); }catch{} }
+      function hasGrant(){ try{ return localStorage.getItem(LS_G_GRANTED)==='1'; }catch{ return false; } }
+
+      let tokenClient = null;
+      let tokenPromise = null;
+
+      async function ensureToken(interactive){
+        if (accessToken) return accessToken;
+        const saved = loadSavedToken(); if (saved) return saved;
+        const clientId = getClientId();
+        if (!clientId){ alert('Client ID Google manquant (<meta name="google-client-id">)'); throw new Error('GOOGLE_CLIENT_ID manquant'); }
+        await loadGisScript();
+        tokenPromise = new Promise((resolve,reject)=>{
+          try{
+            if (!tokenClient){
+              tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: GCAL_SCOPES,
+                ux_mode: 'popup',
+                callback: (resp)=>{
+                  tokenPromise = null;
+                  if (resp && resp.access_token){
+                    accessToken = resp.access_token;
+                    saveToken(resp.access_token, resp.expires_in);
+                    markGranted(true);
+                    resolve(accessToken);
+                  } else reject(new Error('Aucun jeton reçu'));
+                }
+              });
+            }
+            tokenClient.requestAccessToken({ prompt: interactive ? 'consent' : '' });
+          }catch(e){ tokenPromise=null; reject(e); }
+        });
+        return tokenPromise;
+      }
+
+      async function whoAmI(){
+        try{
+          if (!loadSavedToken() && !accessToken) return null;
+          const r = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers:{ Authorization:`Bearer ${accessToken}` }});
+          if (!r.ok) return null;
+          return r.json();
+        }catch{ return null; }
+      }
+
+      async function gfetch(path, { method='GET', query=null, body=null, interactive=false } = {}){
+        // ⬇️ Ne force pas de popup par défaut ; les handlers UI appellent déjà ensureToken(true)
+        await ensureToken(interactive);
+
+        const url = new URL(GCAL_API + path);
+        if (query) Object.entries(query).forEach(([k, v]) => url.searchParams.set(k, v));
+
+        const resp = await fetch(url.toString(), {
+          method,
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: body ? JSON.stringify(body) : null
+        });
+
+        if (!resp.ok) {
+          let msg = `HTTP ${resp.status}`;
+          try { const j = await resp.json(); if (j.error && j.error.message) msg += ` — ${j.error.message}`; } catch {}
+          throw new Error(msg);
+        }
+        return resp.json();
+      }
+
+      function disconnectGoogle(){
+        clearSavedToken(); markGranted(false);
+        setStatus('Non connecté.');
+        updateGoogleButtons();
+      }
+
+      async function silentReconnect(){
+        if (loadSavedToken()){
+          const me = await whoAmI();
+          if (me && me.email){
+            setStatus('Connecté : ' + me.email);
+            updateGoogleButtons();
+            return;
+          }
+        }
+        if (hasGrant()){
+          try{
+            await ensureToken(false);
+            const me = await whoAmI();
+            if (me && me.email){ setStatus('Connecté : ' + me.email); updateGoogleButtons(); return; }
+          }catch{}
+        }
+        setStatus('Non connecté.');
+        updateGoogleButtons();
+      }
+
+      function updateGoogleButtons(){
+        const connected = !!(loadSavedToken() || accessToken);
+
+        // Affiche/masque Connexion/Déconnexion
+        if (btnConnect) btnConnect.style.display = connected ? 'none' : '';
+        if (btnLogout)  btnLogout.style.display  = connected ? '' : 'none';
+
+        // Les actions d’orga visibles seulement si connecté
+        const showOrgActions = connected ? '' : 'none';
+        if (orgCreateBtn)         orgCreateBtn.style.display        = showOrgActions;
+        if (orgRefreshBtn)        orgRefreshBtn.style.display       = showOrgActions;
+        if (orgImportBtn)         orgImportBtn.style.display        = showOrgActions;
+        if (orgImportPrimaryBtn)  orgImportPrimaryBtn.style.display = showOrgActions;
+
+        // Désactive intelligemment les imports selon la sélection
+        const selCount = (typeof selectedOrgs !== 'undefined' && selectedOrgs) ? selectedOrgs.size : 0;
+        if (orgImportBtn)         orgImportBtn.disabled        = !connected || selCount === 0;
+        if (orgImportPrimaryBtn)  orgImportPrimaryBtn.disabled = !connected || selCount !== 1;
+
+        // Bouton "Inviter les membres" = grisé si pas connecté ou champ vide
+        if (typeof window.updateInviteBtnState === 'function') window.updateInviteBtnState();
+      }
+
+      // ======= ORGANISATIONS (détection, création, invitations) =======
+      function parseOrgFromSummary(summary){
+        // "MultiappOrg · Nom · General"
+        // "MultiappOrg · Nom · Member · email@..."
+        const s = String(summary||'');
+        if (s.indexOf(ORG_PREFIX)!==0) return null;
+        const parts = s.slice(ORG_PREFIX.length).split('·').map(p=>p.trim());
+        if (!parts.length) return null;
+        const name = parts[0];
+        if (parts.length>=2 && /^general$/i.test(parts[1])) return { name, type:'general' };
+        if (parts.length>=3 && /^member$/i.test(parts[1]))  return { name, type:'member', email: parts.slice(2).join(' · ') };
+        return { name, type:'unknown' };
+      }
+
+      async function scanOrganizations(){
+        const list = await gfetch('/users/me/calendarList', { query:{ maxResults:'250' }});
+        const items = Array.isArray(list.items) ? list.items : [];
+        const groups = new Map(); // name -> {name, generalId, members:[], owner:bool}
+
+        for (const c of items){
+          const meta = parseOrgFromSummary(c.summary);
+          if (!meta) continue;
+          if (!groups.has(meta.name)) groups.set(meta.name, { name: meta.name, generalId: null, members: [], owner: false });
+          const g = groups.get(meta.name);
+          const role = String(c.accessRole||'').toLowerCase();
+          if (role === 'owner') g.owner = true;
+
+          if (meta.type === 'general') g.generalId = c.id;
+          else if (meta.type === 'member' && meta.email) g.members.push({ email: meta.email, calId: c.id });
+        }
+
+        orgsOwned  = Array.from(groups.values()).filter(o => o.owner);
+        orgsShared = Array.from(groups.values()).filter(o => !o.owner);
+
+        renderOrgLists();
+      }
+
+      function renderOrgLists(){
+        function renderList(root, data, section){
+          root.innerHTML = '';
+          if (!data.length){
+            root.innerHTML = '<div class="muted">Aucune</div>';
+            return;
+          }
+          data.forEach(o=>{
+            const id = 'orgchk-'+section+'-'+o.name.replace(/\s+/g,'_');
+            const wrap = document.createElement('div');
+            wrap.className = 'row';
+            wrap.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0;';
+            const left = document.createElement('div');
+            left.style.cssText='display:flex; align-items:center; gap:8px;';
+            const cb = document.createElement('input');
+            cb.type='checkbox'; cb.id=id; cb.checked = selectedOrgs.has(o.name);
+            cb.addEventListener('change', ()=>{
+              if (cb.checked) selectedOrgs.add(o.name); else selectedOrgs.delete(o.name);
+              saveSelectedOrgs(); buildFilters(); renderGrid(); renderDayPanel();
+            });
+            const lbl = document.createElement('label');
+            lbl.setAttribute('for', id);
+            lbl.innerHTML = `<b>${esc(o.name)}</b> &nbsp;<span class="muted">${o.members.length} membre(s)</span>`;
+            left.appendChild(cb); left.appendChild(lbl);
+            wrap.appendChild(left);
+
+            if (o.owner){
+              const right = document.createElement('div');
+              const btn = document.createElement('button');
+              btn.className='btn ghost';
+              btn.textContent = 'Inviter des membres';
+              btn.title = 'Ajoute des membres à cette organisation';
+              btn.addEventListener('click', ()=>{
+                orgNameInp.value = o.name;
+                orgMembersInp.focus();
+              });
+              right.appendChild(btn);
+              wrap.appendChild(right);
+            }
+
+            root.appendChild(wrap);
+          });
+        }
+
+        renderList(orgOwnedList, orgsOwned, 'owned');
+        renderList(orgSharedList, orgsShared, 'shared');
+        updateGoogleButtons();
+        buildFilters();
+      }
+
+      // Crée une org (Général + (option) perso par membre) et partage
+      async function createOrganization(){
+        const name = orgNameInp.value.trim();
+        if (!name){ alert('Indique un nom d’organisation.'); return; }
+        const members = splitEmails(orgMembersInp.value);
+        const createPersonals = !!orgCreatePersonals.checked;
+        const sendInv = !!orgSendInvites.checked;
+
+        setStatus('Création de l’organisation…');
+
+        // 1) Général
+        const general = await gfetch('/calendars', { method:'POST', body:{ summary: ORG_PREFIX + name + ' · General' }});
+        const generalId = general.id;
+        await gfetch('/users/me/calendarList', { method:'POST', body:{ id: generalId } }).catch(()=>{});
+
+        // 2) ACL du Général (tous membres = writer)
+        for (const m of members){
+          await gfetch(`/calendars/${encodeURIComponent(generalId)}/acl`, {
+            method:'POST', query:{ sendNotifications: sendInv?'true':'false' },
+            body:{ role:'writer', scope:{ type:'user', value:m } }
+          }).catch(()=>{});
+        }
+
+        // 3) Perso (optionnel)
+        if (createPersonals){
+          for (const m of members){
+            const cal = await gfetch('/calendars', { method:'POST', body:{ summary: ORG_PREFIX + name + ' · Member · ' + m }});
+            await gfetch('/users/me/calendarList', { method:'POST', body:{ id: cal.id } }).catch(()=>{});
+            await gfetch(`/calendars/${encodeURIComponent(cal.id)}/acl`, {
+              method:'POST', query:{ sendNotifications: sendInv?'true':'false' },
+              body:{ role:'writer', scope:{ type:'user', value:m } }
+            }).catch(()=>{});
+          }
+        }
+
+        setStatus('Organisation créée ✅');
+        alert('Organisation créée. Les membres reçoivent un e-mail (à accepter).');
+        orgMembersInp.value = '';
+        updateInviteBtnState();
+        await scanOrganizations();
+      }
+
+      // Inviter des e-mails à une org existante (ou la créer si absente)
+      async function inviteMembersToOrg(){
+        const name = orgNameInp.value.trim();
+        const emails = splitEmails(orgMembersInp.value);
+        if (!name){ alert('Indique le nom de l’organisation.'); return; }
+        if (!emails.length){ alert('Ajoute au moins un e-mail.'); return; }
+        const createPersonals = !!orgCreatePersonals.checked;
+        const sendInv = !!orgSendInvites.checked;
+
+        setStatus('Invitation en cours…');
+
+        // Scanner pour trouver l’org existante (propriétaire)
+        const list = await gfetch('/users/me/calendarList', { query:{ maxResults:'250' }});
+        const items = Array.isArray(list.items)?list.items:[];
+        let general = items.find(c => c.summary === (ORG_PREFIX+name+' · General'));
+        let generalId = general?.id;
+
+        // Si pas d’org, on la crée automatiquement (Général)
+        if (!generalId){
+          const created = await gfetch('/calendars', { method:'POST', body:{ summary: ORG_PREFIX + name + ' · General' }});
+          generalId = created.id;
+          await gfetch('/users/me/calendarList', { method:'POST', body:{ id: generalId } }).catch(()=>{});
+        }
+
+        // Donne accès writer au Général (+ e-mail d’invitation si coché)
+        for (const m of emails){
+          await gfetch(`/calendars/${encodeURIComponent(generalId)}/acl`, {
+            method:'POST', query:{ sendNotifications: sendInv?'true':'false' },
+            body:{ role:'writer', scope:{ type:'user', value:m } }
+          }).catch(()=>{});
+        }
+
+        // Perso optionnel : créer le calendrier “Member · email” + writer pour le membre
+        if (createPersonals){
+          // Re-scan rapide pour éviter doublons
+          const again = await gfetch('/users/me/calendarList', { query:{ maxResults:'250' }});
+          const all   = Array.isArray(again.items)?again.items:[];
+          for (const m of emails){
+            const want = ORG_PREFIX + name + ' · Member · ' + m;
+            let cal = all.find(c => c.summary === want);
+            if (!cal){
+              cal = await gfetch('/calendars', { method:'POST', body:{ summary: want }});
+              await gfetch('/users/me/calendarList', { method:'POST', body:{ id: cal.id } }).catch(()=>{});
+            }
+            await gfetch(`/calendars/${encodeURIComponent(cal.id)}/acl`, {
+              method:'POST', query:{ sendNotifications: sendInv?'true':'false' },
+              body:{ role:'writer', scope:{ type:'user', value:m } }
+            }).catch(()=>{});
+          }
+        }
+
+        alert('Invitations envoyées.');
+        orgMembersInp.value = '';
+        updateInviteBtnState();
+        setStatus('Invitations envoyées ✅');
+        await scanOrganizations();
+      }
+
+      // ======= IMPORT (mois visible) =======
+      function monthRangeISO(){
+        const start = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1, 0,0,0,0);
+        const end   = new Date(currentMonth.getFullYear(), currentMonth.getMonth()+1, 0, 23,59,59,999);
+        return { timeMin: start.toISOString(), timeMax: end.toISOString() };
+      }
+      function toYmdFromGoogle(ev){
+        if (ev && ev.start && ev.start.date) return ev.start.date;
+        const iso = ev && ev.start ? (ev.start.dateTime || ev.start.date) : null;
+        if (!iso) return null;
+        const d = new Date(iso); if (isNaN(d)) return null;
+        return ymd(d);
+      }
+      function dedupeMerge(base, incoming){
+        const byGid = new Map(), bySig = new Map();
+        for (const e of base){
+          if (e.gid) byGid.set(e.gid, 1);
+          else bySig.set(e.cal+'|'+e.date+'|'+e.title, 1);
+        }
+        const out = base.slice();
+        for (const e of incoming){
+          if (e.gid && byGid.has(e.gid)) continue;
+          const sig = e.cal+'|'+e.date+'|'+e.title;
+          if (!e.gid && bySig.has(sig)) continue;
+          out.push(e);
+        }
+        return out;
+      }
+
+      function orgCalKey(orgName, label){ return orgName+'::'+label; } // ex: “Famille Martin::General” ou “Projet::member:email”
+      function colorFor(text){
+        let h=0; for (let i=0;i<text.length;i++) h=(h*31 + text.charCodeAt(i))>>>0;
+        const hue = h % 360; return `hsl(${hue}deg 70% 45%)`;
+      }
+
+      function activeCalendarsFromSelection(){
+        // Construit la liste des "calendriers logiques" (General + member…) pour les organisations cochées
+        const map = [];
+        const addOrg = (o)=>{
+          if (!o) return;
+          // Général
+          map.push({ key: orgCalKey(o.name,'General'), label: o.name+' — Général', color: '#4CAF50', gId: o.generalId });
+          // Membres
+          (o.members||[]).forEach(m=>{
+            map.push({ key: orgCalKey(o.name,'member:'+m.email), label: o.name+' — '+m.email, color: colorFor(o.name+'|'+m.email), gId: m.calId });
+          });
+        };
+        orgsOwned.filter(o=>selectedOrgs.has(o.name)).forEach(addOrg);
+        orgsShared.filter(o=>selectedOrgs.has(o.name)).forEach(addOrg);
+        return map;
+      }
+
+      async function importSelectedOrgsMonth(){
+        const sel = Array.from(selectedOrgs);
+        if (!sel.length){ alert('Coche au moins une organisation.'); return; }
+        setStatus('Import du mois en cours…');
+
+        const { timeMin, timeMax } = monthRangeISO();
+        const incoming = [];
+        const active = activeCalendarsFromSelection();
+
+        for (const cal of active){
+          if (!cal.gId) continue; // pas de calendrier Google (ex: org partagée incomplète)
+      const data = await gfetch(`/calendars/${encodeURIComponent(cal.gId)}/events`, {
+        query:{ maxResults:'2500', singleEvents:'true', orderBy:'startTime', timeMin, timeMax }
+      });
+      const items = Array.isArray(data.items)?data.items:[];
+      for (const ev of items){
+        if (ev.status==='cancelled') continue;
+        const date = toYmdFromGoogle(ev); if (!date) continue;
+        const title = (ev.summary||'(Sans titre)').trim();
+        incoming.push({ id: uid(), cal: cal.key, date, title, gid: ev.id });
+      }
+        }
+
+        events = dedupeMerge(events, incoming);
+        saveEvents();
+        buildFilters();
+        renderGrid();
+        renderDayPanel();
+        setStatus('Import terminé.');
+        alert('Affichage mis à jour pour le mois visible.');
+      }
+
+      async function importPrimaryToSelectedOrg(){
+        const sel = Array.from(selectedOrgs);
+        if (sel.length!==1){ alert('Sélectionne exactement 1 organisation (case cochée).'); return; }
+        const orgName = sel[0];
+        const org = orgsOwned.find(o=>o.name===orgName) || orgsShared.find(o=>o.name===orgName);
+        if (!org || !org.generalId){ alert('Organisation invalide ou sans calendrier Général.'); return; }
+
+        setStatus('Import de votre calendrier principal → Général…');
+        const { timeMin, timeMax } = monthRangeISO();
+        const data = await gfetch('/calendars/primary/events', {
+          query:{ maxResults:'2500', singleEvents:'true', orderBy:'startTime', timeMin, timeMax }
+        });
+        const items = Array.isArray(data.items)?data.items:[];
+        const incoming = [];
+        const calKey = orgCalKey(orgName,'General');
+
+        for (const ev of items){
+          if (ev.status==='cancelled') continue;
+          const date = toYmdFromGoogle(ev); if (!date) continue;
+          const title=(ev.summary||'(Sans titre)').trim();
+          incoming.push({ id: uid(), cal: calKey, date, title, gid: 'primary:'+ev.id });
+        }
+
+        events = dedupeMerge(events, incoming);
+        saveEvents(); buildFilters(); renderGrid(); renderDayPanel();
+        setStatus('Import (primary → Général) terminé.');
+        alert('Import terminé (mois visible).');
+      }
+
+      // ======= RENDU / UI AGENDA =======
+      const MONTHS_FR   = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+
+      function renderMonthHeader(){
+        const label = MONTHS_FR[currentMonth.getMonth()]+' '+currentMonth.getFullYear();
+        monthLbl.textContent = label.charAt(0).toUpperCase()+label.slice(1);
+      }
+      function startOfWeekIndex(d){ return (d.getDay()+6)%7; } // Lundi=0
+
+      function renderGrid(){
+        renderMonthHeader();
+        grid.innerHTML = '';
+        const first = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+        const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth()+1, 0).getDate();
+        const leading = startOfWeekIndex(first);
+        for (let i=0;i<leading;i++){
+          const cell=document.createElement('div'); cell.className='ag-day muted';
+          cell.style.cssText='min-height:96px; border-radius:12px; background:var(--color-surface-2,#f6fbfd); opacity:.5;';
+          grid.appendChild(cell);
+        }
+        for (let day=1; day<=daysInMonth; day++){
+          const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+          const id = ymd(d);
+          const cell = document.createElement('div'); cell.className='ag-day'; cell.dataset.date=id;
+          cell.style.cssText='min-height:120px; border-radius:14px; padding:8px; background:#fff; border:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; gap:6px;';
+          if (id === selectedDay) cell.classList.add('is-selected');
+          const head=document.createElement('div'); head.style.cssText='display:flex; align-items:center; justify-content:space-between; gap:8px;';
+          head.innerHTML='<div style="font-weight:600">'+day+'</div>'+(id===todayYMD()?'<span class="badge">Aujourd’hui</span>':'');
+          const listWrap=document.createElement('div'); listWrap.style.cssText='display:flex; flex-direction:column; gap:4px;';
+          const dayEvents = events.filter(e => e.date === id && visible.has(e.cal));
+          dayEvents.slice(0,3).forEach(ev=>{
+            const pill=document.createElement('div'); pill.className='ag-pill';
+            const col = colorFor(ev.cal);
+            pill.title=ev.title;
+            pill.innerHTML='<span style="width:10px; height:10px; border-radius:50%; background:'+col+'"></span><span style="flex:1; overflow:hidden; text-overflow:ellipsis;">'+esc(ev.title)+'</span>';
+            pill.dataset.id=ev.id; listWrap.appendChild(pill);
+          });
+          if (dayEvents.length>3){
+            const more=document.createElement('div'); more.className='muted'; more.style.cssText='font-size:12px;'; more.textContent='+'+(dayEvents.length-3)+' autres…';
+            listWrap.appendChild(more);
+          }
+          cell.appendChild(head); cell.appendChild(listWrap); grid.appendChild(cell);
+        }
+      }
+
+      function buildFilters(){
+        // Construit les chips à partir des org cochées
+        if (!filtersWrap) return;
+        const active = activeCalendarsFromSelection();
+        if (!active.length){ filtersWrap.innerHTML = '<div class="muted">Aucune organisation sélectionnée.</div>'; return; }
+
+        // Initialiser visible si vide
+        if (!visible || !(visible instanceof Set) || visible.size===0){
+          visible = new Set(active.map(a=>a.key));
+          saveVisible();
+        }
+
+        filtersWrap.innerHTML = '';
+        active.forEach(c=>{
+          const label=document.createElement('label'); label.className='ag-chip';
+          const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=visible.has(c.key);
+          const dot=document.createElement('span'); dot.className='dot'; dot.style.background=c.color || colorFor(c.key);
+          const txt=document.createElement('span'); txt.textContent=c.label;
+          cb.addEventListener('change', ()=>{
+            if (cb.checked) visible.add(c.key); else visible.delete(c.key);
+            saveVisible(); renderGrid(); renderDayPanel();
+          });
+          label.appendChild(cb); label.appendChild(dot); label.appendChild(txt);
+          filtersWrap.appendChild(label);
+        });
+
+        // Dropdown ajout rapide
+        if (quickCal){
+          quickCal.innerHTML='';
+          active.forEach(c=>{ const o=document.createElement('option'); o.value=c.key; o.textContent=c.label; quickCal.appendChild(o); });
+        }
+      }
+
+      function renderDayPanel(){
+        if (!selectedDay){ dayTitle.textContent='Sélectionne un jour…'; dayList.innerHTML=''; dayEmpty.style.display='block'; quickForm.style.display='none'; return; }
+        const d = parseYMD(selectedDay);
+        dayTitle.textContent = d ? d.toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : selectedDay;
+        const items = events.filter(e=> e.date===selectedDay && visible.has(e.cal)).sort((a,b)=>a.cal.localeCompare(b.cal));
+        dayList.innerHTML='';
+        if (items.length===0){
+          dayEmpty.style.display='block';
+        } else {
+          dayEmpty.style.display='none';
+          const frag=document.createDocumentFragment();
+          for (const ev of items){
+            const row=document.createElement('div'); row.className='card';
+            row.style.cssText='display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 10px;';
+            row.innerHTML='<div style="display:flex; align-items:center; gap:8px; min-width:0;">'
+            +'<span style="width:10px; height:10px; border-radius:50%; background:'+colorFor(ev.cal)+'"></span>'
+            +'<div style="font-weight:600;">'+esc(ev.cal.split('::')[0])+'</div>'
+            +'<div style="opacity:.8; overflow:hidden; text-overflow:ellipsis;">— '+esc(ev.title)+'</div></div>'
+            +'<div><button class="btn" data-act="edit" data-id="'+ev.id+'">✏️</button>'
+            +'<button class="btn danger" data-act="del" data-id="'+ev.id+'">🗑️</button></div>';
+            frag.appendChild(row);
+          }
+          dayList.appendChild(frag);
+        }
+        quickForm.style.display='flex';
+      }
+
+      // ======= DONNÉES LOCALES (ajout/édition) =======
+      function addEvent(calKey, dateYmd, title, gid){
+        const obj = { id: uid(), cal: calKey, date: dateYmd, title: String(title||'').trim() };
+        if (gid) obj.gid = gid;
+        events.push(obj);
+        saveEvents();
+        renderGrid();
+        renderDayPanel();
+      }
+
+      function deleteEvent(id){
+        const i = events.findIndex(e => e.id === id);
+        if (i !== -1){
+          events.splice(i, 1);
+          saveEvents();
+          renderGrid();
+          renderDayPanel();
+        }
+      }
+
+      function editEvent(id, title){
+        const e = events.find(x => x.id === id);
+        if (!e) return;
+        e.title = String(title || '').trim();
+        saveEvents();
+        renderGrid();
+        renderDayPanel();
+      }
+
+      // ======= NAVIGATION / HANDLERS =======
+      function goMonth(delta){ currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth()+delta, 1); renderGrid(); renderDayPanel(); }
+
+      function init(cont){
+        // ==== Récup des éléments ====
+        container  = cont;
+        grid       = container.querySelector('#ag-grid');
+        monthLbl   = container.querySelector('#ag-month');
+        btnPrev    = container.querySelector('#ag-prev');
+        btnNext    = container.querySelector('#ag-next');
+        btnToday   = container.querySelector('#ag-today');
+        whoSel     = container.querySelector('#ag-who'); // pas utilisé ici mais conservé si présent
+        filtersWrap= container.querySelector('#ag-cal-filters');
+        quickForm  = container.querySelector('#ag-quick-form');
+        quickCal   = container.querySelector('#ag-quick-cal');
+        quickTitle = container.querySelector('#ag-quick-title');
+        quickAdd   = container.querySelector('#ag-quick-add');
+        dayTitle   = container.querySelector('#ag-day-title');
+        dayList    = container.querySelector('#ag-day-list');
+        dayEmpty   = container.querySelector('#ag-day-empty');
+
+        // Google / Orgs UI
+        statusEl   = container.querySelector('#gcal-status');
+        btnConnect = container.querySelector('#gcal-connect');
+        btnLogout  = container.querySelector('#gcal-logout');
+        orgNameInp = container.querySelector('#org-name');
+        orgMembersInp = container.querySelector('#org-members');
+        orgCreatePersonals = container.querySelector('#org-create-personals');
+        orgSendInvites     = container.querySelector('#org-send-invites');
+        orgCreateBtn = container.querySelector('#org-create-btn');
+        orgRefreshBtn= container.querySelector('#org-refresh');
+        orgOwnedList = container.querySelector('#org-owned-list');
+        orgSharedList= container.querySelector('#org-shared-list');
+        orgImportBtn = container.querySelector('#org-import');
+        orgImportPrimaryBtn = container.querySelector('#org-import-primary');
+        const orgInviteBtn = container.querySelector('#org-invite');
+
+  // ==== État local & rendu initial ====
+  loadAll();
+  // ensure selectedDay is initialized before first render
+  selectedDay = todayYMD();
+  // build filters (initialise `visible`) before rendering the grid
+  try{ if (typeof buildFilters === 'function') buildFilters(); }catch{}
+  renderGrid();
+  renderDayPanel();
+
+        // ==== Correctif "refresh normal" ====
+        const hadSaved = !!loadSavedToken(); // existe un jeton valide ?
+        if (hadSaved) {
+          whoAmI().then(me=>{
+            if (me && me.email) setStatus('Connecté : ' + me.email);
+            updateGoogleButtons();
+            scanOrganizations();
+          });
+        } else {
+          // tentative silencieuse (sans popup)
+          silentReconnect().then(()=>{
+            updateGoogleButtons();
+            if (loadSavedToken()) scanOrganizations();
+          });
+        }
+
+        // ==== Handlers ====
+        if (grid) {
+          grid.addEventListener('click', function (e) {
+            const cell = e.target.closest('.ag-day[data-date]');
+            if (cell) {
+              selectedDay = cell.dataset.date;
+              renderGrid();
+              renderDayPanel();
+              return;
+            }
+            const pill = e.target.closest('.ag-pill');
+            if (pill) {
+              const ev = events.find(x => x.id === pill.dataset.id);
+              if (!ev) return;
+              const next = prompt('Modifier le titre :', ev.title);
+              if (next && next.trim()) editEvent(ev.id, next);
+            }
+          });
+        }
+
+        if (quickAdd) {
+          quickAdd.addEventListener('click', function () {
+            if (!selectedDay) return;
+            const calKey = quickCal ? quickCal.value : null;
+            const title = quickTitle ? quickTitle.value : '';
+            if (!calKey || !title.trim()) return;
+            addEvent(calKey, selectedDay, title);
+            if (quickTitle) quickTitle.value = '';
+          });
+        }
+
+        if (dayList) {
+          dayList.addEventListener('click', function (e) {
+            const btn = e.target.closest('button[data-act]');
+            if (!btn) return;
+            const id = btn.dataset.id;
+            const act = btn.dataset.act;
+            const ev = events.find(x => x.id === id);
+            if (!ev) return;
+
+            if (act === 'del') {
+              if (confirm('Supprimer ?')) deleteEvent(id);
+            } else if (act === 'edit') {
+              const next = prompt('Modifier le titre :', ev.title);
+              if (next && next.trim()) editEvent(id, next);
+            }
+          });
+        }
+
+        if (btnPrev)  btnPrev.addEventListener('click', function () { goMonth(-1); });
+        if (btnNext)  btnNext.addEventListener('click', function () { goMonth(1); });
+        if (btnToday) btnToday.addEventListener('click', function () {
+          currentMonth = new Date(); currentMonth.setDate(1);
+          selectedDay = todayYMD();
+          renderGrid(); renderDayPanel();
+        });
+
+        if (btnConnect) {
+          btnConnect.addEventListener('click', async function () {
+            try {
+              setStatus('Connexion...');
+              await ensureToken(true);
+              const me = await whoAmI();
+              if (me && me.email) {
+                setStatus('Connecté : ' + me.email);
+              } else {
+                setStatus('Connecté à Google.');
+              }
+              updateGoogleButtons();
+              await scanOrganizations();
+            } catch (e) {
+              setStatus('Échec de connexion Google.');
+              alert(e && e.message ? e.message : e);
+            }
+          });
+        }
+
+        if (btnLogout) {
+          btnLogout.addEventListener('click', function () {
+            disconnectGoogle();
+            if (orgOwnedList)  orgOwnedList.innerHTML  = '';
+            if (orgSharedList) orgSharedList.innerHTML = '';
+          });
+        }
+
+        if (orgCreateBtn) {
+          orgCreateBtn.addEventListener('click', async function () {
+            try {
+              await ensureToken(true);
+              await createOrganization();
+            } catch (e) {
+              alert(e && e.message ? e.message : e);
+            }
+          });
+        }
+
+        if (orgRefreshBtn) {
+          orgRefreshBtn.addEventListener('click', async function () {
+            try {
+              await ensureToken(true);
+              await scanOrganizations();
+            } catch (e) {
+              alert(e && e.message ? e.message : e);
+            }
+          });
+        }
+
+        // === Inviter les membres (bouton à côté du champ) ===
+        window.updateInviteBtnState = function () {
+          const txt = (orgMembersInp && orgMembersInp.value || '').trim();
+          const connected = !!(loadSavedToken() || accessToken);
+          const orgInviteBtn = container.querySelector('#org-invite');
+          if (orgInviteBtn) orgInviteBtn.disabled = (txt.length === 0) || !connected;
+        };
+          if (orgMembersInp) {
+            orgMembersInp.addEventListener('input', window.updateInviteBtnState);
+            window.updateInviteBtnState();
+          }
+          {
+            const orgInviteBtn = container.querySelector('#org-invite');
+            if (orgInviteBtn) {
+              orgInviteBtn.addEventListener('click', async function () {
+                try {
+                  await ensureToken(true);
+                  await inviteMembersToOrg();
+                } catch (e) {
+                  alert(e && e.message ? e.message : e);
+                }
+              });
+            }
+          }
+
+          if (orgImportBtn) {
+            orgImportBtn.addEventListener('click', async function () {
+              try {
+                await ensureToken(true);
+                await importSelectedOrgsMonth();
+              } catch (e) {
+                alert(e && e.message ? e.message : e);
+              }
+            });
+          }
+
+          if (orgImportPrimaryBtn) {
+            orgImportPrimaryBtn.addEventListener('click', async function () {
+              try {
+                await ensureToken(true);
+                await importPrimaryToSelectedOrg();
+              } catch (e) {
+                alert(e && e.message ? e.message : e);
+              }
+            });
+          }
+      }; // <-- FIN de function init(cont)
+    return { init, destroy(){ /* no-op */ } };
+})()); // <-- FIN DU MODULE AGENDA
     // Formulaire principal + navigation calendrier
     // 3) Form principal + nav calendrier (tous en ?.)
     document.getElementById('transaction-form')?.addEventListener('submit', addTransaction);
@@ -2279,60 +3621,59 @@ updateFolderStatus();
       updateViews();
     });
 
-    // --- Période des statistiques (sélecteurs synchronisés)
-    const statsSel = document.getElementById('stats-period');
-    const editStatsSel = document.getElementById('edit-stats-period');
+    // --- Période des statistiques (mémoire + sélecteurs synchronisés)
+    // (auto-suffisant : inclut son propre normaliseur et sécurise STATS_PERIOD)
+    (() => {
+  const statsSel = document.getElementById('stats-period');
+  const editStatsSel = document.getElementById('edit-stats-period');
+  const STATS_KEY = 'stats:period';
 
-    function syncStatsPeriod(from) {
-      if (from === 'stats' && statsSel) {
-        STATS_PERIOD = statsSel.value;
-        if (editStatsSel) editStatsSel.value = STATS_PERIOD;
-      } else if (from === 'edit' && editStatsSel) {
-        STATS_PERIOD = editStatsSel.value;
-        if (statsSel) statsSel.value = STATS_PERIOD;
+      // Normalise vers 'day' | 'month' | 'year'
+      function normalizePeriodLocal(val) {
+        const s = String(val || '')
+        .toLowerCase()
+        .normalize('NFD').replace(/\p{Diacritic}/gu,'') // enlève accents
+        .replace(/\s+/g,'').replace(/[-_]/g,'');       // suppr espaces/traits/underscores
+        if (['day','today','jour','aujourdhui','auj','cejour'].includes(s)) return 'day';
+        if (['year','annee','anneeencours','currentyear','an'].includes(s)) return 'year';
+        return 'month'; // défaut
       }
-      renderStats();
-    }
 
-    statsSel?.addEventListener('change', () => syncStatsPeriod('stats'));
-    editStatsSel?.addEventListener('change', () => syncStatsPeriod('edit'));
+      // Expose une globale utilisée par d'autres morceaux éventuels
+      if (typeof window.STATS_PERIOD === 'undefined') {
+        window.STATS_PERIOD = 'month';
+      }
 
-    // Valeur initiale
-    if (statsSel) STATS_PERIOD = statsSel.value;
-    if (editStatsSel) editStatsSel.value = STATS_PERIOD;
+      function applyStatsPeriod(val, opts = {}) {
+        const persist = opts.persist !== false;
+        const v = normalizePeriodLocal(val || 'month');
 
-    // NEW: suppression par Delete ou Backspace, même si la ligne n'a pas été cliquée
-    document.addEventListener('keydown', (e) => {
-      const tag = (document.activeElement?.tagName || '').toLowerCase();
-      if (['input','textarea','select'].includes(tag)) return;
+        if (statsSel) statsSel.value = v;
+        if (editStatsSel) editStatsSel.value = v;
 
-      if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+        window.STATS_PERIOD = v;
 
-      // essaie d'abord la sélection explicite
-      let sel = document.querySelector('#day-details .tx-line.is-selected');
-      // sinon, si on a le focus sur une ligne, prends-la
-      if (!sel) sel = document.querySelector('#day-details .tx-line:focus');
-      if (sel) selectedTxId = sel.dataset.txId;
+        if (persist) {
+          try { localStorage.setItem(STATS_KEY, v); } catch {}
+        }
 
-      if (!selectedTxId) return;
+        try { if (typeof window.renderStats === 'function') window.renderStats(); } catch {}
+      }
+    
+      // Écoutes utilisateur
+      statsSel?.addEventListener('change', () => applyStatsPeriod(statsSel.value));
+      editStatsSel?.addEventListener('change', () => applyStatsPeriod(editStatsSel.value));
 
-      e.preventDefault(); // évite le "back" navigateur avec Backspace
+      // Initialisation (restaure si présent)
+       (function initStatsPeriod(){
+    let saved = null;
+    try { saved = localStorage.getItem(STATS_KEY); } catch {}
+    applyStatsPeriod(saved || statsSel?.value || 'month', { persist: false });
+  })();
+})(); // <-- on ferme juste cette IIFE utilitaire
 
-      const tx = transactions.find(t => t.id === selectedTxId);
-      if (!tx) return;
-
-      const ok = confirm(`Supprimer "${tx.description}" du ${toDisplayFromISO(tx.date)} ?`);
-      if (!ok) return;
-
-      transactions = transactions.filter(t => t.id !== selectedTxId);
-      selectedTxId = null;
-      saveTransactionsLocal();
-      if (isDropboxConnected()) saveTransactionsDropbox();
-      updateViews();
-    });
-
-    // Tri / regroupement recap mois
-    document.getElementById('month-sort-btn')?.addEventListener('click', () => {
+      // Tri / regroupement recap mois
+      document.getElementById('month-sort-btn')?.addEventListener('click', () => {
       monthSortMode = {
         'date-asc':  'date-desc',
         'date-desc': 'amount-asc',
@@ -2342,8 +3683,6 @@ updateFolderStatus();
       renderMonthSummary();
     });
     document.getElementById('group-by-category')?.addEventListener('change', renderMonthSummary);
-  });
-});
 
 // ====== Dynamic calendar colors (legend pickers) — version singleton (fix) ======
 const CAL_COLOR_VARS = ['--color-weekend','--color-holiday','--color-today','--color-primary'];
@@ -2883,206 +4222,54 @@ document.addEventListener('click', (e) => {
 });
 
 // === IconPickerV2 — autonome (ouvre + sélection + valider/annuler/fermer) ===
-(function(){
-  const SHEET = document.getElementById('icon-sheet');
-  if (!SHEET) return;
+function applySelection(){
+  if (!state.icon || !state.targetInput || !state.targetPreview) return;
 
-  // Toujours sous <body> (évite les parents en display:none)
-  if (SHEET.parentElement !== document.body) {
-    document.body.appendChild(SHEET);
-  }
+  const cls = state.icon;
 
-  // Refs
-  const PANEL  = SHEET.querySelector('.sheet__panel');
-  const GRID   = document.getElementById('ip-grid');
-  const CHIPS  = document.getElementById('ip-chips');
-  const SEARCH = document.getElementById('ip-search');
-  const BTN_CLOSE    = SHEET.querySelector('.sheet__close');
-  const BTN_CANCEL   = document.getElementById('ip-cancel');
-  const BTN_VALIDATE = document.getElementById('ip-validate');
+  // 1) Valeur + pastille
+  state.targetInput.value = cls;
+  state.targetPreview.innerHTML = `<i class="${cls}" aria-hidden="true"></i>`;
 
-  // Jeu d'icônes
-  const ICONS = {
-    "Récents": [],
-    "Essentiels": [
-      "fa-solid fa-utensils","fa-solid fa-cart-shopping","fa-solid fa-gas-pump",
-      "fa-solid fa-bus","fa-solid fa-sack-dollar","fa-solid fa-gift"
-    ],
-    "Logement": ["fa-solid fa-house","fa-solid fa-bolt","fa-solid fa-fire","fa-solid fa-droplet"],
-    "Transport": ["fa-solid fa-car","fa-solid fa-motorcycle","fa-solid fa-train-subway","fa-solid fa-plane"],
-    "Vie quotidienne": ["fa-solid fa-bread-slice","fa-solid fa-shirt","fa-solid fa-basket-shopping"],
-    "Santé": ["fa-solid fa-briefcase-medical","fa-solid fa-capsules","fa-solid fa-tooth"],
-    "Télécom": ["fa-solid fa-wifi","fa-solid fa-mobile-screen-button","fa-solid fa-phone"],
-    "Loisirs": ["fa-solid fa-futbol","fa-solid fa-music","fa-solid fa-gamepad","fa-solid fa-film"],
-    "Animaux": ["fa-solid fa-paw","fa-solid fa-bone"],
-    "Travail/Études": ["fa-solid fa-briefcase","fa-solid fa-graduation-cap"],
-    "Autres": ["fa-regular fa-circle-question","fa-solid fa-ellipsis"]
-  };
-  const RECENTS_KEY = 'ip.recents';
-  const loadRecents = () => JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
-  const saveRecents = (arr) => localStorage.setItem(RECENTS_KEY, JSON.stringify(arr.slice(0,12)));
-
-  const state = { icon:null, targetInput:null, targetPreview:null, category:'Essentiels' };
-
-  function openSheet(inputId, previewId){
-    state.targetInput   = document.getElementById(inputId);
-    state.targetPreview = document.getElementById(previewId);
-    state.icon = state.targetInput?.value || null;
-
-    ICONS["Récents"] = loadRecents();
-    renderChips();
-    renderGrid();
-
-    // (ré)initialise Valider
-    if (BTN_VALIDATE) {
-      BTN_VALIDATE.disabled = !state.icon;
-      if (!state.icon) BTN_VALIDATE.setAttribute('aria-disabled','true');
-      else BTN_VALIDATE.removeAttribute('aria-disabled');
-    }
-
-    // Ouvre visuellement
-    SHEET.classList.add('is-open');
-    SHEET.setAttribute('aria-hidden','false');
-    if (PANEL) PANEL.style.transform = 'translateY(0)';
-    setTimeout(()=> SEARCH?.focus(), 0);
-  }
-
-  function closeSheet(){
-    SHEET.classList.remove('is-open');
-    SHEET.setAttribute('aria-hidden','true');
-    SHEET.style.display = 'none';         // ⬅️ indispensable pour annuler le display:block mis à l’ouverture
-    if (PANEL) PANEL.style.transform = ''; // (facultatif) reset
-  }
-
-  function renderChips(){
-    if (!CHIPS) return;
-    CHIPS.innerHTML = '';
-    Object.keys(ICONS).forEach(cat => {
-      if (cat === 'Récents' && ICONS['Récents'].length === 0) return;
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'cp-chip' + (cat === state.category ? ' active' : '');
-      b.textContent = cat;
-      b.addEventListener('click', () => {
-        state.category = cat;
-        CHIPS.querySelectorAll('.cp-chip').forEach(x=>x.classList.remove('active'));
-        b.classList.add('active');
-        renderGrid();
-      });
-      CHIPS.appendChild(b);
-    });
-  }
-
-  function renderGrid(){
-    if (!GRID) return;
-    const q = (SEARCH?.value || '').trim().toLowerCase();
-    const base = state.category ? ICONS[state.category] : Object.values(ICONS).flat();
-    const list = q ? base.filter(c => c.toLowerCase().includes(q)) : base;
-
-    GRID.innerHTML = '';
-    list.forEach(cls => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ip-icon' + (cls === state.icon ? ' is-selected' : '');
-      btn.innerHTML = `<i class="${cls}"></i>`;
-      btn.addEventListener('click', () => {
-        state.icon = cls;
-        GRID.querySelectorAll('.ip-icon').forEach(x=>x.classList.remove('is-selected'));
-        btn.classList.add('is-selected');
-        if (BTN_VALIDATE) {
-          BTN_VALIDATE.disabled = false;            // <- débloque vraiment
-          BTN_VALIDATE.removeAttribute('disabled'); // <- au cas où
-          BTN_VALIDATE.removeAttribute('aria-disabled');
+  // 2) Libellé "Choisir" -> nom d'icône (même comportement que le double-clic)
+  try {
+    const picker = state.targetPreview.closest('.category-picker-v2') || state.targetPreview.closest('.category-picker');
+    const lbl = picker?.querySelector('.cat-current-label');
+    if (lbl) {
+      const MAP = {
+        'fa-solid fa-bus': 'Transport',
+        'fa-solid fa-cart-shopping': 'Courses',
+        'fa-solid fa-basket-shopping': 'Courses',
+        'fa-solid fa-gas-pump': 'Carburant',
+        'fa-solid fa-briefcase': 'Salaire',
+        'fa-solid fa-car': 'Voiture',
+        'fa-solid fa-house': 'Logement',
+        'fa-solid fa-utensils': 'Restaurant',
+        'fa-solid fa-bolt': 'Énergie',
+        'fa-solid fa-shield-heart': 'Santé',
+      };
+      let nice = MAP[cls] || '';
+      if (!nice) {
+        const m = String(cls).match(/fa-[a-z0-9-]+$/i);
+        if (m) {
+          const s = m[0].replace(/^fa-/,'').replace(/-/g,' ');
+          nice = s.charAt(0).toUpperCase() + s.slice(1);
         }
-      });
-      GRID.appendChild(btn);
-    });
-
-    if (!list.length) {
-      GRID.innerHTML = `<div style="grid-column:1/-1;opacity:.7;text-align:center;">Aucun résultat…</div>`;
+      }
+      lbl.textContent = nice || 'Catégorie';
     }
-  }
+  } catch {}
 
-  function applySelection(){
-    if (!state.icon || !state.targetInput || !state.targetPreview) return;
-    state.targetInput.value = state.icon;
-    state.targetPreview.innerHTML = `<i class="${state.icon}"></i>`;
+  // 3) Récents
+  const r = loadRecents();
+  const i = r.indexOf(cls);
+  if (i !== -1) r.splice(i,1);
+  r.unshift(cls);
+  saveRecents(r);
 
-    const r = loadRecents();
-    const i = r.indexOf(state.icon);
-    if (i !== -1) r.splice(i,1);
-    r.unshift(state.icon);
-    saveRecents(r);
-
-    closeSheet();
-  }
-
-  // 👉 Écouteurs des boutons (capture = true pour passer avant tout autre code)
-  BTN_CLOSE    && BTN_CLOSE.addEventListener('click',  (e)=>{ e.preventDefault(); e.stopPropagation(); closeSheet(); }, true);
-  BTN_CANCEL   && BTN_CANCEL.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); closeSheet(); }, true);
-  BTN_VALIDATE && BTN_VALIDATE.addEventListener('click',(e)=>{ e.preventDefault(); e.stopPropagation(); if(!state.icon) return; applySelection(); }, true);
-
-  // Expose pour test console
-  window.__openIconSheet = openSheet;
-
-  // === Délégation des clics (garantie de capture des boutons) ===
-  document.addEventListener('click', (e) => {
-    // Ouvrir depuis n'importe quel .cat-trigger
-    const trigger = e.target.closest('.cat-trigger');
-    if (trigger) {
-      e.preventDefault();
-      openSheet(trigger.dataset.targetInput, trigger.dataset.targetPreview);
-      return;
-    }
-  });
-
-  SHEET.addEventListener('click', (e) => {
-    // Fermer via backdrop
-    if (e.target.classList && e.target.classList.contains('sheet__backdrop')) {
-      e.preventDefault(); closeSheet(); return;
-    }
-    // Fermer via croix
-    const cross = e.target.closest('.sheet__close');
-    if (cross) { e.preventDefault(); closeSheet(); return; }
-
-    // Annuler
-    const cancel = e.target.closest('#ip-cancel');
-    if (cancel) { e.preventDefault(); closeSheet(); return; }
-
-    // Valider (fonctionne même si l'attribut disabled traîne)
-    const validate = e.target.closest('#ip-validate');
-    if (validate) {
-      e.preventDefault();
-      if (!state.icon) return;
-      applySelection();
-    }
-  });
-
-  // Recherche
-  SEARCH && SEARCH.addEventListener('input', renderGrid);
-
-  // Accessibilité: Enter sur un bouton sélectionné -> valider
-  SHEET.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && SHEET.classList.contains('is-open')) {
-      if (state.icon) { e.preventDefault(); applySelection(); }
-    }
-    if (e.key === 'Escape' && SHEET.classList.contains('is-open')) {
-      e.preventDefault(); closeSheet();
-    }
-  });
-
-  window.__closeIconSheet = closeSheet;
-  window.__applyIconSelection = applySelection;
-
-  // Sync preview si une valeur existe déjà
-  document.querySelectorAll('.cat-trigger').forEach(btn => {
-    const input = document.getElementById(btn.dataset.targetInput);
-    const preview = document.getElementById(btn.dataset.targetPreview);
-    if (input?.value) preview.innerHTML = `<i class="${input.value}"></i>`;
-  });
-
-  console.log('[IconPickerV2] prêt. triggers =', document.querySelectorAll('.cat-trigger').length);
-})();
+  // 4) Ferme la sheet
+  closeSheet();
+}
 
 // Filet de sécurité global (prioritaire) pour les boutons de la feuille d'icônes
 document.addEventListener('click', function(e){
@@ -3139,13 +4326,28 @@ document.addEventListener('click', function(e){
     }
   } catch(e){}
 
-  function openModal(){ modal && (modal.style.display = 'block'); }
-  function closeModal(){ modal && (modal.style.display = 'none'); }
+  function openModal(){
+    if (modal) modal.style.display = 'block';
+  }
+  function closeModal(){
+    if (modal) modal.style.display = 'none';
+  }
 
-  modal?.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal?.style.display === 'block') closeModal(); });
-  btnOpen?.addEventListener('click', openModal);
-  btnCancel?.addEventListener('click', closeModal);
+  // (compat large) pas d'optional chaining ici
+  if (modal) {
+    modal.addEventListener('click', function(e){
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e && e.key === 'Escape' && modal && modal.style.display === 'block') {
+      closeModal();
+    }
+  });
+
+  if (btnOpen)  btnOpen.addEventListener('click', openModal);
+  if (btnCancel) btnCancel.addEventListener('click', closeModal);
 
   // ---- Helpers capture PDF ----
   async function ensureVisibleForCapture(el) {
@@ -3165,66 +4367,172 @@ document.addEventListener('click', function(e){
   // conversion mm -> pixels pour préparer une image à la "bonne" largeur
   const mmToPx = (mm) => Math.round((mm / 25.4) * 130); // ~130 dpi: net et léger
 
-  async function captureSelectorToPdf(pdf, title, selector) {
-    const el = document.querySelector(selector);
-    if (!el) return;
+  // Titre simple (dessin immédiat, pas de saut de page ici)
+  function drawSectionTitle(pdf, title){
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.text(String(title || ''), LAYOUT.MARGIN, pdf.__cursorY);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    pdf.__cursorY += 8;
+  }
 
-    const restore = await ensureVisibleForCapture(el);
-    try {
-      const { MARGIN, HEADER_H, FOOTER_H, GAP } = LAYOUT;
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
+  // (optionnel) si appelé ailleurs : garde-plat qui appelle drawSectionTitle
+  function addSectionTitle(pdf, title){ drawSectionTitle(pdf, title); }
 
-      // Point de départ sûr sous l'en-tête
-      let y = pdf.__cursorY ?? (MARGIN + HEADER_H + 4);
+  // Convertit un sélecteur en image et l'insère dans jsPDF (robuste, sans toucher 'canvas' hors scope)
+  // Convertit un sélecteur en image et l'insère dans jsPDF (net et compact)
+  // Convertit un sélecteur en image et l'insère dans jsPDF (net et compact)
+  async function captureSelectorToPdf(doc, selector, y, opts = {}) {
+    const node = document.querySelector(selector);
+    if (!node) return y;
 
-      // Titre de section
-      if (title) {
-        pdf.setFontSize(16);
-        pdf.setTextColor(0, 0, 0);
-        pdf.text(title, MARGIN, y);
-        y += GAP;
+    // --- Cas spécial: graphique Plotly → image nette directe, avec légende agrandie ---
+    if (opts.plotlyDivId) {
+      const div = document.getElementById(opts.plotlyDivId);
+      if (div && window.Plotly?.toImage) {
+        // Légende plus grande pendant l'export (puis on restaure)
+        let oldLegendSize;
+        try {
+          oldLegendSize = div.layout?.legend?.font?.size;
+          const newSize = Number(opts.legendFontSize || 16);
+          await Plotly.relayout(div, {
+            'legend.font.size': newSize,
+            'legend.itemsizing': 'constant',
+            'legend.itemwidth': 40
+          });
+        } catch (_) {}
+
+        // Export image nette du graphe
+        const W = 1000, H = 640;
+        const S = Number(window.PLOTLY_EXPORT_SCALE || 1.6);
+        const dataUrl = await Plotly.toImage(div, { format:'png', width:W, height:H, scale:S });
+
+        // Restauration de la légende
+        try { await Plotly.relayout(div, { 'legend.font.size': (oldLegendSize ?? null) }); } catch (_) {}
+
+        // Place l'image : on force l'ajustement dans la hauteur dispo
+        return placeImage(doc, dataUrl, y, {
+          margin: Number(opts.pageMargin ?? 24),
+                          wPx: W * S,
+                          hPx: H * S,
+                          maxHeight: Number(opts.maxHeight || 0)  // ← si fourni : pas de page en plus, on réduit pour tenir
+        });
       }
-
-      // 1) Capture DOM -> canvas (échelle modérée)
-      const canvas = await html2canvas(el, {
-        backgroundColor: null,
-        scale: CAPTURE_SCALE
-      });
-
-      // 2) Downscale vers la largeur utile du PDF (en px), puis export JPEG compressé
-      const targetWmm = pageW - 2*MARGIN;
-      const targetWpx = Math.min(canvas.width, mmToPx(targetWmm));
-      const targetHpx = Math.round(canvas.height * (targetWpx / canvas.width));
-
-      const tmp = document.createElement('canvas');
-      tmp.width = targetWpx;
-      tmp.height = targetHpx;
-      const ctx = tmp.getContext('2d');
-      ctx.drawImage(canvas, 0, 0, targetWpx, targetHpx);
-
-      const imgData = tmp.toDataURL('image/jpeg', JPEG_QUALITY); // <<< JPEG compressé
-
-      // 3) Placement dans la page
-      const targetHmm = targetWmm;
-      const targetHmmH = (targetHpx / targetWpx) * targetHmm; // conserve ratio en mm
-      const remaining = pageH - y - MARGIN - FOOTER_H;
-
-      if (targetHmmH > remaining) {
-        pdf.addPage();
-        y = MARGIN + HEADER_H + 4;
-      }
-
-      pdf.addImage(imgData, 'JPEG', MARGIN, y, targetHmm, targetHmmH);
-      pdf.__cursorY = y + targetHmmH + GAP;
-
-      if (pdf.__cursorY > pageH - MARGIN - FOOTER_H) {
-        pdf.addPage();
-        pdf.__cursorY = MARGIN + HEADER_H + 4;
-      }
-    } finally {
-      restore();
     }
+
+    // --- Clone hors-écran (visible pour html2canvas) ---
+    const bg = '#ffffff'; // fond simple (évite color(srgb))
+const rect = node.getBoundingClientRect();
+const sandboxWidth = Math.max(720, Math.floor(rect.width || node.offsetWidth || 1200));
+
+const sandbox = document.createElement('div');
+sandbox.style.cssText = [
+  'position:fixed','left:-99999px','top:0','z-index:-1',
+  `background:${bg}`,'padding:0','margin:0',`width:${sandboxWidth}px`
+].join(';');
+
+const clone = node.cloneNode(true);
+
+// Neutralise color-mix() → fixe --od-bg (évite erreur html2canvas "unsupported color function 'color'")
+try {
+  const dark = document.documentElement.classList.contains('dark-mode');
+  clone.querySelectorAll('.od-gauge').forEach(el => {
+    el.style.setProperty('--od-bg', dark ? 'rgba(255,255,255,.12)' : 'rgba(0,0,0,.08)');
+  });
+} catch {}
+
+// Calendrier : si le libellé de mois est vide dans le CLONE, on met celui de la page
+if (selector === '#calendar-section') {
+  try {
+    const dst = clone.querySelector('#current-month, .current-month, [data-current-month]');
+    const srcTxt = document.querySelector('#current-month, .current-month, [data-current-month]')?.textContent?.trim();
+    if (dst && srcTxt && !dst.textContent.trim()) dst.textContent = srcTxt;
+  } catch {}
+}
+
+// Rendre le clone "visible"
+(function makeVisible(el){
+  if (!(el instanceof Element)) return;
+  el.removeAttribute('hidden'); el.setAttribute('aria-hidden','false');
+  const s = el.style;
+  if (s) {
+    if (s.display === 'none') s.display = '';
+    if (s.visibility === 'hidden') s.visibility = '';
+    if (s.opacity === '0') s.opacity = '';
+    if (s.transform && s.transform !== 'none') s.transform = 'none';
+  }
+  el.querySelectorAll('[hidden]').forEach(n => n.removeAttribute('hidden'));
+  el.querySelectorAll('[aria-hidden="true"]').forEach(n => n.setAttribute('aria-hidden','false'));
+  el.querySelectorAll('[style]').forEach(n => {
+    const st = n.style;
+    if (st.display === 'none') st.display = '';
+    if (st.visibility === 'hidden') st.visibility = '';
+    if (st.opacity === '0') st.opacity = '';
+  });
+})(clone);
+
+sandbox.appendChild(clone);
+document.body.appendChild(sandbox);
+
+// Rasterisation (DPI contrôlé → poids maîtrisé)
+const EXPORT_DPI   = Number(window.PDF_EXPORT_DPI || 132);
+const SCALE        = Math.max(1, EXPORT_DPI / 96);
+const JPEG_QUALITY = Number(window.JPEG_QUALITY  || 0.82);
+
+const canvas = await html2canvas(clone, {
+  backgroundColor: bg,
+  scale: SCALE,
+  useCORS: true,
+  logging: false,
+  windowWidth: sandboxWidth,
+  windowHeight: clone.scrollHeight || document.documentElement.scrollHeight
+});
+
+document.body.removeChild(sandbox);
+
+const dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+return placeImage(doc, dataUrl, y, {
+  margin: Number(opts.pageMargin ?? 24),
+                  wPx: canvas.width,
+                  hPx: canvas.height,
+                  maxHeight: Number(opts.maxHeight || 0)
+});
+
+// --- Placement (sans page vide, ajuste pour tenir si maxHeight fourni) ---
+function placeImage(doc, url, y0, { margin = 24, wPx, hPx, maxHeight = 0 } = {}) {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const maxW  = pageW - margin*2;
+
+  wPx = Math.max(1, Number(wPx) || 1200);
+  hPx = Math.max(1, Number(hPx) || Math.round(wPx * 0.6));
+  const ratio = hPx / wPx;
+
+  let drawW = maxW;
+  let drawH = drawW * ratio;
+
+  // Si on a une contrainte de hauteur (cas du graphe en page dédiée), on respecte cette limite
+  if (maxHeight > 0 && drawH > maxHeight) {
+    drawH = maxHeight;
+    drawW = drawH / ratio;
+  } else {
+    // Sinon, si ça dépasse la page courante → on saute une page proprement
+    if (y0 + drawH > pageH - margin) {
+      doc.addPage();
+      y0 = margin;
+      // sécurité: si trop haut même en page neuve → on réduit
+      const avail = pageH - margin*2;
+      if (drawH > avail) {
+        drawH = avail;
+        drawW = drawH / ratio;
+      }
+    }
+  }
+
+  doc.addImage(url, 'JPEG', margin, y0, drawW, drawH);
+  return y0 + drawH + 10;
+}
   }
 
   // En-tête / pied de page
@@ -3319,54 +4627,111 @@ document.addEventListener('click', function(e){
     w.document.close();
   }
 
-  async function runExport() {
-    const wantCalendar = cbCalendar?.checked;
-    const wantMonth    = cbMonth?.checked;
-    const wantStats    = cbStats?.checked;
-    const wantHistory  = cbHistory?.checked;
-
-    if (!wantCalendar && !wantMonth && !wantStats && !wantHistory) {
-      alert('Sélectionne au moins un élément à exporter.');
-      return;
-    }
-
-    // UI lock
-    const oldText = btnRun.innerHTML;
-    btnRun.disabled = true;
-    btnRun.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Génération…';
-
+  // Handshake canvas pour Firefox/LibreWolf (RFP) : à appeler dès le clic
+  function __requestCanvasPermissionSync() {
     try {
-      const { jsPDF } = window.jspdf || {};
-      if (!jsPDF || !window.html2canvas) {
-        alert('Librairies PDF manquantes. Vérifie les balises <script> html2canvas et jsPDF.');
-        return;
+      const c = document.createElement('canvas');
+      c.width = 4; c.height = 4;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 4, 4);
+      // lecture synchrone = "user gesture" encore active
+      void c.toDataURL('image/png');
+    } catch(_) {}
+  }
+
+  // === PDF EXPORT SETTINGS (tu peux ajuster) ===
+  window.PDF_EXPORT_DPI        = window.PDF_EXPORT_DPI ?? 192;   // ↓ DPI = ↓ poids ; ↑ DPI = ↑ netteté
+  window.JPEG_QUALITY          = window.JPEG_QUALITY   ?? 0.9;  // 0.75–0.9 conseillé
+  window.PLOTLY_EXPORT_SCALE   = window.PLOTLY_EXPORT_SCALE ?? 1.6;
+
+  function ensureSpace(doc, y, need, margin=24){
+    const pageH = doc.internal.pageSize.getHeight();
+    if (y + need > pageH - margin) { doc.addPage(); return margin; }
+    return y;
+  }
+  function drawPdfTitle(doc, text, y, margin=24){
+    y = ensureSpace(doc, y, 18, margin);
+    doc.setFont('helvetica','bold'); doc.setFontSize(14);
+    doc.text(String(text||''), margin, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11);
+    return y + 10;
+  }
+  function drawPdfNote(doc, text, y, margin=24){
+    y = ensureSpace(doc, y, 14, margin);
+    doc.setFont('helvetica','normal'); doc.setFontSize(11);
+    doc.text(String(text||''), margin, y);
+    return y + 8;
+  }
+  function getCalendarMonthLabel(){
+    // 1) window.currentMonth (si dispo)
+    try{ if (window.currentMonth instanceof Date && !isNaN(window.currentMonth)) {
+      return window.currentMonth.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase());
+    }}catch{}
+    // 2) Texte déjà affiché dans la page
+    try{
+      const t = document.querySelector('#current-month, .current-month, [data-current-month]')?.textContent?.trim();
+      if (t) return t;
+    }catch{}
+    // 3) data-year/data-month sur la section calendrier
+    try{
+      const root = document.querySelector('#calendar-section');
+      const y = Number(root?.getAttribute('data-year'));
+      const m = Number(root?.getAttribute('data-month'));
+      if (Number.isFinite(y) && Number.isFinite(m)) {
+        const d = new Date(y, (m>0?m-1:m), 1);
+        return d.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase());
       }
+    }catch{}
+    // 4) Fallback: mois courant
+    const d = new Date();
+    return d.toLocaleDateString('fr-FR',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase());
+  }
 
-      // Prépare le nom de fichier choisi
-      let fileName = (fileInput?.value || 'finances.pdf').trim();
-      if (!/\.pdf$/i.test(fileName)) fileName += '.pdf';
+  async function runExport() {
+    document.body.classList.add('is-exporting');
+    try {
+      const PDFCtor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+      if (typeof PDFCtor !== 'function') throw new Error('jsPDF non chargé');
 
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      pdf.__cursorY = LAYOUT.MARGIN + LAYOUT.HEADER_H + 4;
+      const doc = new PDFCtor({ unit: 'pt', format: 'a4' });
+      const M = 24;  // marge
+      let y = M;
 
-      // Ordre logique
-      if (wantCalendar) await captureSelectorToPdf(pdf, 'Calendrier', '#calendar-section');
-      if (wantMonth)    await captureSelectorToPdf(pdf, 'Récapitulatif du mois', '#month-summary');
-      if (wantStats)    await captureSelectorToPdf(pdf, 'Statistiques', '#stats-section');
-      if (wantHistory)  await captureSelectorToPdf(pdf, 'Historique', '#transactions-section');
+      // 1) CALENDRIER — titre + mois (texte) + capture
+      y = drawPdfTitle(doc, 'Calendrier', y, M);
+      y = drawPdfNote(doc, getCalendarMonthLabel(), y, M);
+      y = await captureSelectorToPdf(doc, '#calendar-section', y);
 
-      addHeaderFooter(pdf, 'Finances — Export');
+      // 2) RÉCAPITULATIF — titre + capture
+      y = drawPdfTitle(doc, 'Récapitulatif du mois', y, M);
+      y = await captureSelectorToPdf(doc, '#month-summary', y);
 
-      // 👉 Aperçu avec bouton "Télécharger" (download=filename)
-      previewPdf(pdf, fileName);
+      // 3) STATISTIQUES — NOUVELLE PAGE dédiée (titre + graphe qui tient en entier)
+      doc.addPage();
+      y = M;
+      y = drawPdfTitle(doc, 'Statistiques', y, M);
 
-      closeModal();
+      // hauteur dispo pour l'image sur cette page (après le titre)
+      const pageH = doc.internal.pageSize.getHeight();
+      const maxH  = pageH - M - y;
+
+      y = await captureSelectorToPdf(doc, '#stats-section', y, {
+        plotlyDivId: 'pie-chart',
+        maxHeight: maxH,     // ← on demande explicitement une image à cette hauteur max
+        pageMargin: M,
+        legendFontSize: 16   // ← légende plus grande pendant l’export
+      });
+
+      const name = (typeof makePdfName === 'function')
+      ? makePdfName()
+      : `finances-${new Date().toISOString().slice(0,10)}.pdf`;
+
+      doc.save(name);
     } catch (err) {
       console.error('Erreur export PDF:', err);
-      alert('Échec de la génération du PDF. Regarde la console pour les détails.');
+      alert('Erreur export PDF: ' + (err?.message || err));
     } finally {
-      btnRun.disabled = false;
-      btnRun.innerHTML = oldText;
+      document.body.classList.remove('is-exporting');
     }
   }
 
@@ -4227,9 +5592,24 @@ document.addEventListener('click', function(e){
   function closeIconSheet() {
     const sheet = document.getElementById('icon-sheet');
     if (!sheet) return;
+
+    // Ferme visuellement
     sheet.classList.remove('is-open');
     sheet.setAttribute('aria-hidden', 'true');
+
+    // 🔒 Coupe toute interaction résiduelle
+    try { sheet.style.display = 'none'; } catch {}
+    try { sheet.style.pointerEvents = 'none'; } catch {}
+
+    // S’il y a une modale finance ouverte derrière, on la “réveille”
+    try {
+      const modal = document.getElementById('modal-edit-transaction');
+      if (modal) modal.style.pointerEvents = 'auto';
+    } catch {}
   }
+
+  // Expose la fermeture en global pour tous les appels existants
+  try { window.__closeIconSheet = closeIconSheet; } catch {}
 
   // >>> FIX: utilise __closeIconSheet (qui RESTAURE pointer-events de la modale)
   function closeSheetAndRestore() {
@@ -4368,6 +5748,148 @@ function closeSheetRestore() {
   }
 }
 
+/* ==== HOTFIX 2025-08-12 — IconPickerV2: état global manquant ==== */
+(function(){
+  const init = { icon:null, category:'Essentiels', targetInput:null, targetPreview:null };
+  if (!window.__ICON_PICKER__) window.__ICON_PICKER__ = { state: { ...init } };
+  if (!window.__ICON_PICKER__.state) window.__ICON_PICKER__.state = { ...init };
+  // Alias attendu par le code existant (références directes à "state.*")
+  if (typeof window.state === 'undefined') window.state = window.__ICON_PICKER__.state;
+})();
+
+
+// === IconPickerV2 — ouverture (compat window.openIconPicker)
+window.__openIconSheet = function(inputId, previewId){
+  // cibles
+  try {
+    state.targetInput   = document.getElementById(inputId);
+    state.targetPreview = document.getElementById(previewId);
+  } catch { state.targetInput = null; state.targetPreview = null; }
+  state.icon = state.targetInput?.value || null;
+
+  // éléments du sheet (locaux)
+  const SHEET = document.getElementById('icon-sheet');
+  const PANEL = SHEET?.querySelector('.sheet__panel');
+  const GRID  = document.getElementById('ip-grid');
+  const SEARCH = document.getElementById('ip-search');
+  const BTN_VALIDATE = document.getElementById('ip-validate');
+
+  // catégories + récents + reset recherche
+  if (typeof loadRecents === 'function') {
+    ICONS["Récents"] = loadRecents();
+  }
+  if (!ICONS[state.category]) state.category = 'Essentiels';
+  if (SEARCH) SEARCH.value = '';
+
+  // (re)peuple les onglets + la grille
+  if (typeof renderChips === 'function') renderChips();
+  if (typeof renderGrid  === 'function') renderGrid();
+
+  // Si la grille est vide, fallback sur "toutes icônes"
+  if (GRID && !GRID.children.length) {
+    state.category = '';
+    if (typeof renderChips === 'function') renderChips();
+    if (typeof renderGrid  === 'function') renderGrid();
+  }
+
+  // Ouvre visuellement
+  if (SHEET) {
+    SHEET.style.display = 'block';
+    SHEET.classList.add('is-open');
+    SHEET.setAttribute('aria-hidden','false');
+  }
+  if (PANEL) PANEL.style.transform = 'translateY(0)';
+
+  // (Ré)initialise le bouton Valider
+  if (BTN_VALIDATE) {
+    BTN_VALIDATE.disabled = !state.icon;
+    if (!state.icon) BTN_VALIDATE.setAttribute('aria-disabled','true');
+    else BTN_VALIDATE.removeAttribute('aria-disabled');
+  }
+
+  // Focus recherche
+  setTimeout(() => { try { SEARCH?.focus(); } catch {} }, 0);
+};
+
+/* ==== HOTFIX 2025-08-12 — IconPickerV2: catalogue + rendu (fallbacks) ==== */
+(function(){
+  // Catalogue minimal si absent
+  if (!window.ICONS) window.ICONS = {
+    'Essentiels': [
+      'fa-solid fa-bus',
+      'fa-solid fa-cart-shopping',
+      'fa-solid fa-basket-shopping',
+      'fa-solid fa-gas-pump',
+      'fa-solid fa-briefcase',
+      'fa-solid fa-car',
+      'fa-solid fa-house',
+      'fa-solid fa-utensils',
+      'fa-solid fa-bolt',
+      'fa-solid fa-shield-heart'
+    ]
+  };
+
+  // Récents (fallback)
+  if (typeof window.loadRecents !== 'function') {
+    const KEY = 'iconPickerRecents';
+    window.loadRecents = () => {
+      try { const s = localStorage.getItem(KEY); const a = s?JSON.parse(s):[]; return Array.isArray(a)?a.slice(0,12):[]; } catch { return []; }
+    };
+    window.saveRecents = (arr) => { try { localStorage.setItem(KEY, JSON.stringify((arr||[]).slice(0,12))); } catch {} };
+  }
+
+  // Onglets catégories (fallback)
+  if (typeof window.renderChips !== 'function') {
+    window.renderChips = function(){
+      const wrap = document.getElementById('ip-cats');
+      if (!wrap) return;
+      const cats = Object.keys(window.ICONS);
+      wrap.innerHTML = cats.map(c => `<button type="button" class="ip-chip${state.category===c?' is-active':''}" data-cat="${c}">${c}</button>`).join('');
+      wrap.querySelectorAll('.ip-chip').forEach(btn=>{
+        btn.onclick = () => { state.category = btn.dataset.cat; renderChips(); renderGrid(); };
+      });
+    };
+  }
+
+  // Grille d’icônes (fallback)
+  if (typeof window.renderGrid !== 'function') {
+    window.renderGrid = function(){
+      const grid = document.getElementById('ip-grid');
+      if (!grid) return;
+      const search = (document.getElementById('ip-search')?.value || '').trim().toLowerCase();
+      const list = (state.category && window.ICONS[state.category]) ? window.ICONS[state.category] : Object.values(window.ICONS).flat();
+      const filtered = !search ? list : list.filter(c => c.toLowerCase().includes(search));
+      grid.innerHTML = filtered.map(cls => `
+        <button type="button" class="ip-icon" data-icon="${cls}" title="${cls}">
+          <i class="${cls}" aria-hidden="true"></i>
+        </button>
+      `).join('') || '<div class="ip-empty">Aucune icône</div>';
+
+      const btnValidate = document.getElementById('ip-validate');
+      grid.querySelectorAll('.ip-icon').forEach(btn=>{
+        btn.onclick = () => {
+          state.icon = btn.dataset.icon;
+          if (btnValidate) { btnValidate.disabled = false; btnValidate.removeAttribute('aria-disabled'); }
+        };
+        btn.ondblclick = () => { state.icon = btn.dataset.icon; if (typeof applySelection === 'function') applySelection(); };
+      });
+    };
+  }
+
+  // Fermeture (fallback, n’écrase pas l’existant)
+  if (typeof window.closeSheet !== 'function') {
+    window.closeSheet = function(){
+      const sheet = document.getElementById('icon-sheet');
+      if (!sheet) return;
+      sheet.classList.remove('is-open');
+      sheet.setAttribute('aria-hidden','true');
+      sheet.style.display = '';
+      const panel = sheet.querySelector('.sheet__panel');
+      if (panel) panel.style.transform = '';
+    };
+  }
+})();
+
 // Ouvrir au-dessus quand on clique "Catégorie"
 document.addEventListener('click', (e) => {
   if (e.target.closest('.cat-trigger')) {
@@ -4441,6 +5963,7 @@ window.renderStats = function renderStatsPlotly(){
   })();
 
   // --- Utils
+
   function normalizePeriod(val){
     const s = String(val||'').toLowerCase()
     .normalize('NFD').replace(/\p{Diacritic}/gu,'').replace(/\s+/g,'').replace(/-/g,'');
@@ -4785,4 +6308,872 @@ $('#refresh-after-salary')?.addEventListener('click', () => {
 
 // Option console
 window.calculateResteAVivre = () => recalcAndRender({ ignoreSalaryFieldIfTxExists: true });
+})();
+
+/* ============================================
+   Thème : toggle soleil/lune dans le menu Profil
+   - Stocke le choix dans localStorage('theme')
+   - Ajoute / retire la classe 'dark-mode' sur <html>
+   - Met à jour l'état ARIA du bouton (aria-pressed)
+   ============================================ */
+(function () {
+  function applyTheme(mode) {
+    const html = document.documentElement;
+    const isDark = mode === 'dark';
+    html.classList.toggle('dark-mode', isDark);
+    try {
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    } catch (e) {}
+    const btn = document.getElementById('themeToggle');
+    if (btn) btn.setAttribute('aria-pressed', String(isDark));
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    const btn = document.getElementById('themeToggle');
+    if (!btn) return;
+
+    // État initial : on lit le stockage (complément du bootstrap en <head>)
+    let saved = null;
+    try { saved = localStorage.getItem('theme'); } catch (e) {}
+    if (!saved) {
+      saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    const isDarkNow = document.documentElement.classList.contains('dark-mode') || saved === 'dark';
+    btn.setAttribute('aria-pressed', String(isDarkNow));
+
+    // Click => bascule
+    btn.addEventListener('click', function () {
+      const next = (localStorage.getItem('theme') === 'dark' ||
+                    document.documentElement.classList.contains('dark-mode'))
+                  ? 'light' : 'dark';
+      applyTheme(next);
+    });
+  });
+})();
+
+/* ==========================================================
+   Couleur du bandeau (Topbar)
+   - Pastilles + color picker
+   - Persistance localStorage('topbarColor')
+   - Applique --topbar-bg et une bordure éclaircie (--topbar-border)
+   ========================================================== */
+(function setupTopbarColorPicker() {
+  const STORAGE_KEY = 'topbarColor';
+  const root = document.documentElement;
+
+  // Utils couleurs
+  const hexToRgb = (hex) => {
+    const m = String(hex).trim().replace('#','').toLowerCase();
+    const v = (m.length === 3) ? m.split('').map(c => c+c).join('') : m;
+    const n = parseInt(v, 16);
+    return [ (n>>16)&255, (n>>8)&255, n&255 ];
+  };
+  const rgbToHex = ([r,g,b]) => '#' + [r,g,b].map(x => x.toString(16).padStart(2,'0')).join('');
+  const mixWithWhite = (hex, ratio=0.55) => {
+    const [r,g,b] = hexToRgb(hex);
+    const R = Math.round(r + (255 - r) * ratio);
+    const G = Math.round(g + (255 - g) * ratio);
+    const B = Math.round(b + (255 - b) * ratio);
+    return rgbToHex([R,G,B]);
+  };
+  const isValidHex = (v) => /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.test(String(v).trim());
+
+  function markActive(hex) {
+    const list = document.getElementById('topbar-color-swatches');
+    if (!list) return;
+    list.querySelectorAll('.swatch-btn').forEach(b => {
+      const ok = b.dataset.color?.toLowerCase() === hex?.toLowerCase();
+      b.classList.toggle('is-active', !!ok);
+    });
+  }
+
+  function applyTopbar(hex) {
+    if (!isValidHex(hex)) return;
+    root.style.setProperty('--topbar-bg', hex);
+    root.style.setProperty('--topbar-border', mixWithWhite(hex, 0.55));
+    try { localStorage.setItem(STORAGE_KEY, hex); } catch (_e) {}
+    markActive(hex);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const list = document.getElementById('topbar-color-swatches');
+    const input = document.getElementById('topbar-color-input');
+    if (!list || !input) return;
+
+    // État initial
+    const saved = (() => { try { return localStorage.getItem(STORAGE_KEY); } catch(_e) { return null; } })();
+    if (saved && isValidHex(saved)) {
+      applyTopbar(saved);
+      try { input.value = saved; } catch {}
+    } else {
+      // Prend la valeur CSS courante si définie, sinon fallback fonctionne
+      const cssVar = getComputedStyle(root).getPropertyValue('--topbar-bg').trim();
+      if (isValidHex(cssVar)) { try { input.value = cssVar; } catch {} markActive(cssVar); }
+    }
+
+    // Clic sur les pastilles
+    list.addEventListener('click', (e) => {
+      const btn = e.target.closest('button.swatch-btn[data-color]');
+      if (!btn) return;
+      const hex = btn.dataset.color;
+      applyTopbar(hex);
+      try { input.value = hex; } catch {}
+    });
+
+    // Couleur personnalisée
+    input.addEventListener('input', () => {
+      const hex = input.value;
+      if (isValidHex(hex)) applyTopbar(hex);
+    });
+  });
+})();
+
+/* ==========================================================
+   Découvert : saisie (profil) + jauge AU NIVEAU "Calendrier"
+   - Ajout: possibilité d'activer/désactiver la jauge (localStorage 'overdraft.enabled')
+   - Couleurs:
+       * VERT  : solde >= 0 €
+       * ORANGE: découvert utilisé, mais < 90 %
+       * ROUGE : proche de la limite (>= 90 %) ou dépassement
+   ========================================================== */
+(function overdraftFeature(){
+  const LS_LIMIT   = 'overdraft.limit';
+  const LS_ALERT   = 'overdraft.alerts';
+  const LS_ENABLED = 'overdraft.enabled';
+
+  // --------- Utils ---------
+  const nf = (v) => {
+    try { return new Intl.NumberFormat('fr-FR', { style:'currency', currency:'EUR' }).format(v); }
+    catch { return (Math.round(v*100)/100).toString().replace('.',',') + ' €'; }
+  };
+  const parseMoney = (s) => {
+    if (typeof s === 'number') return s;
+    if (s == null) return 0;
+    const n = String(s).trim().replace(/\s/g,'').replace(',', '.');
+    const v = Number(n);
+    return Number.isFinite(v) ? v : 0;
+  };
+
+  function getSavedLimit(){ try { return parseMoney(localStorage.getItem(LS_LIMIT)); } catch { return 0; } }
+  function getSavedAlerts(){ try { return localStorage.getItem(LS_ALERT) === '1'; } catch { return false; } }
+  function getSavedEnabled(){
+    try {
+      const v = localStorage.getItem(LS_ENABLED);
+      return v == null ? true : v === '1'; // par défaut: activé
+    } catch { return true; }
+  }
+  function setSavedLimit(v){ try { localStorage.setItem(LS_LIMIT, String(v)); } catch {} }
+  function setSavedAlerts(b){ try { localStorage.setItem(LS_ALERT, b ? '1' : '0'); } catch {} }
+  function setSavedEnabled(b){ try { localStorage.setItem(LS_ENABLED, b ? '1' : '0'); } catch {} }
+
+  // Solde courant (fallback si pas d’API interne)
+  function getCurrentBalance(){
+    try {
+      if (typeof window.getCurrentBalance === 'function') return Number(window.getCurrentBalance()) || 0;
+      if (typeof window.currentBalance === 'number') return window.currentBalance || 0;
+      const tx = (Array.isArray(window.transactions) ? window.transactions : []);
+      let sum = 0;
+      for (const t of tx) {
+        const v = parseMoney(t?.amount ?? t?.montant ?? t?.value ?? 0);
+        sum += Number.isFinite(v) ? v : 0;
+      }
+      return sum;
+    } catch { return 0; }
+  }
+
+  // Crée/insère la jauge SOUS LE TITRE "Calendrier"
+  function ensureGaugeAtCalendar(){
+    const sec = document.getElementById('calendar-section');
+    if (!sec) return null;
+
+    let g = sec.querySelector('#overdraft-gauge');
+    if (g) return g;
+
+    const h2 = sec.querySelector('h2');
+    g = document.createElement('div');
+    g.id = 'overdraft-gauge';
+    g.className = 'od-gauge';
+    g.innerHTML = `
+      <div class="od-gauge-bar" aria-hidden="true">
+        <div class="od-gauge-fill" style="width:0%"></div>
+      </div>
+      <div class="od-gauge-meta">
+        <span id="od-balance-label">Solde : —</span>
+        <span id="od-remaining-label">Reste avant limite : —</span>
+        <span id="od-limit-label">Découvert : —</span>
+      </div>
+      <div class="od-alert" id="od-alert">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span id="od-alert-text">Dépassement du découvert autorisé</span>
+      </div>
+    `;
+    if (h2 && h2.parentNode) h2.insertAdjacentElement('afterend', g);
+    else sec.prepend(g);
+    return g;
+  }
+  function showGauge(show){
+    const g = ensureGaugeAtCalendar();
+    if (!g) return;
+    g.style.display = show ? '' : 'none';
+  }
+
+  // Met à jour la jauge (respecte l'activation)
+  let lastAlertState = 'ok'; // 'ok' | 'warn' | 'danger' | 'over'
+  function updateGauge(){
+    const enabled = getSavedEnabled();
+
+    // S'il est désactivé: masquer et sortir
+    if (!enabled) {
+      showGauge(false);
+      return;
+    } else {
+      showGauge(true);
+    }
+
+    const limit   = Math.max(0, getSavedLimit());
+    const balance = Number(getCurrentBalance()) || 0;
+
+    const g = ensureGaugeAtCalendar();
+    if (!g) return;
+
+    const fill    = g.querySelector('.od-gauge-fill');
+    const balLbl  = g.querySelector('#od-balance-label');
+    const remLbl  = g.querySelector('#od-remaining-label');
+    const limLbl  = g.querySelector('#od-limit-label');
+    const alertEl = g.querySelector('#od-alert');
+
+    let widthPct, usedPct = 0;
+    if (balance >= 0 || limit === 0) {
+      widthPct = 100; usedPct = 0;
+    } else {
+      usedPct  = Math.min(1, Math.abs(balance) / limit);
+      widthPct = Math.max(0, Math.min(100, (1 - usedPct) * 100));
+    }
+
+    const RED_TH = 0.90;
+    let color = '#2ecc71', state = 'ok';
+    if (balance >= 0) {
+      color = '#2ecc71'; state = 'ok';
+    } else if (limit > 0 && usedPct < RED_TH) {
+      color = '#ff9800'; state = 'warn';
+    } else if (limit > 0 && usedPct >= RED_TH && usedPct <= 1) {
+      color = '#ef5350'; state = 'danger';
+    } else if (limit > 0 && usedPct > 1) {
+      color = '#c62828'; state = 'over';
+    }
+
+    fill.style.width = widthPct.toFixed(1) + '%';
+    fill.style.backgroundColor = color;
+
+    const remaining = (balance >= 0) ? limit : Math.max(0, limit + balance);
+    balLbl.textContent = `Solde : ${nf(balance)}`;
+    remLbl.textContent = `Reste avant limite : ${limit > 0 ? nf(remaining) : '—'}`;
+    limLbl.textContent = `Découvert : ${nf(limit)}`;
+
+    const alertsOn = getSavedAlerts();
+    if (alertsOn && (state === 'danger' || state === 'over')) {
+      alertEl.style.display = 'block';
+      alertEl.querySelector('#od-alert-text').textContent =
+        (state === 'over') ? 'Dépassement du découvert autorisé' : 'Attention : proche de la limite';
+      if (lastAlertState !== state && 'vibrate' in navigator) {
+        try { navigator.vibrate(state === 'over' ? [140, 80, 140] : 120); } catch {}
+      }
+    } else {
+      alertEl.style.display = 'none';
+    }
+    lastAlertState = state;
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    ensureGaugeAtCalendar();
+
+    // Switch "Afficher la jauge"
+    const enabledEl = document.getElementById('od-enabled');
+    if (enabledEl) {
+      enabledEl.checked = getSavedEnabled();
+      enabledEl.addEventListener('change', () => {
+        setSavedEnabled(enabledEl.checked);
+        updateGauge(); // affiche/masque immédiatement
+      });
+    }
+
+    // Limite & alertes
+    const limitEl = document.getElementById('od-limit');
+    const alertEl = document.getElementById('od-alerts');
+
+    if (limitEl) {
+      const saved = getSavedLimit();
+      if (saved >= 0) limitEl.value = String(saved).replace('.', ',');
+      const onLimitChange = () => {
+        const v = parseMoney(limitEl.value);
+        setSavedLimit(Math.max(0, v));
+        updateGauge();
+      };
+      limitEl.addEventListener('input', onLimitChange);
+      limitEl.addEventListener('change', onLimitChange);
+      limitEl.addEventListener('blur', onLimitChange);
+    }
+    if (alertEl) {
+      alertEl.checked = getSavedAlerts();
+      alertEl.addEventListener('change', () => { setSavedAlerts(alertEl.checked); updateGauge(); });
+    }
+
+    // MAJ au chargement + évènements
+    updateGauge();
+    window.addEventListener('transactions-updated', updateGauge);
+    window.updateOverdraftGauge = updateGauge;
+    setInterval(() => { if (!document.hidden) updateGauge(); }, 5000);
+  });
+})();
+
+/* ==========================================================
+   Dossier local : cacher "Choisir le dossier…" si non supporté
+   - Détecte l'API File System Access (showDirectoryPicker)
+   - Cache le bouton si le statut indique "Non supporté..." ou si l'API manque
+   - Se met à jour si le texte/classe du statut change plus tard
+   ========================================================== */
+(function hidePickFolderWhenUnsupported(){
+  const statusEl = document.getElementById('folder-status');
+  const pickBtn  = document.getElementById('pick-folder-btn');
+  const clearBtn = document.getElementById('clear-folder-btn');
+
+  if (!statusEl || !pickBtn) return;
+
+  function isUnsupportedNow(){
+    const byApi = !('showDirectoryPicker' in window);
+    const text  = (statusEl.textContent || '').trim().toLowerCase();
+    const byMsg = text.includes('non supporté');
+    const byCls = statusEl.classList.contains('unsupported');
+    return byApi || byMsg || byCls;
+  }
+
+  function applyUI(){
+    const unsupported = isUnsupportedNow();
+
+    // Optionnel : force le libellé si non supporté
+    if (unsupported && !statusEl.textContent.toLowerCase().includes('non supporté')) {
+      statusEl.textContent = 'Non supporté par ce navigateur';
+      statusEl.classList.add('unsupported');
+    }
+    // Cache/affiche les boutons
+    pickBtn.style.display  = unsupported ? 'none' : '';   // <-- ce que tu voulais
+    if (clearBtn) clearBtn.style.display = unsupported ? 'none' : clearBtn.style.display;
+  }
+
+  // Init + observe les changements du statut
+  document.addEventListener('DOMContentLoaded', applyUI);
+  applyUI();
+
+  const mo = new MutationObserver(applyUI);
+  mo.observe(statusEl, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+})();
+
+/* ==========================================================
+   Normalisation des dates de transactions (robuste)
+   Objectif : tout ramener en 'YYYY-MM-DD' (local), pour que
+   le filtre "transactions du jour" du calendrier retrouve bien
+   les lignes, même si l'utilisateur a saisi 22/08/2025 ou 22-08-2025
+   ========================================================== */
+(function normalizeTransactionDates() {
+  // Parse "souple" : supporte jj/mm/aaaa, jj-mm-aaaa, aaaa-mm-jj, ISO
+  function parseLooseDate(input) {
+    if (!input) return null;
+
+    // Déjà un Date ?
+    if (input instanceof Date && !isNaN(input)) return input;
+
+    const s = String(input).trim();
+
+    // ISO direct ?
+    // NB: Date.parse gère '2025-08-22' ou '2025-08-22T10:00:00Z'
+    const isoTry = new Date(s);
+    if (!isNaN(isoTry)) return isoTry;
+
+    // jj/mm/aaaa
+    let m = s.match(/^(\d{1,2})[\/](\d{1,2})[\/](\d{4})$/);
+    if (m) {
+      const d = Number(m[1]), mo = Number(m[2]) - 1, y = Number(m[3]);
+      const dt = new Date(y, mo, d, 12, 0, 0); // midi local pour éviter décalages
+      return isNaN(dt) ? null : dt;
+    }
+
+    // jj-mm-aaaa
+    m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (m) {
+      const d = Number(m[1]), mo = Number(m[2]) - 1, y = Number(m[3]);
+      const dt = new Date(y, mo, d, 12, 0, 0);
+      return isNaN(dt) ? null : dt;
+    }
+
+    // aaaa/mm/jj
+    m = s.match(/^(\d{4})[\/](\d{1,2})[\/](\d{1,2})$/);
+    if (m) {
+      const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3]);
+      const dt = new Date(y, mo, d, 12, 0, 0);
+      return isNaN(dt) ? null : dt;
+    }
+
+    return null;
+  }
+
+  function toLocalISODate(dateObj) {
+    if (!(dateObj instanceof Date) || isNaN(dateObj)) return null;
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // Renvoie le champ date existant (quel que soit son nom)
+  function pickDateField(tx) {
+    return tx?.date ?? tx?.dateStr ?? tx?.day ?? tx?.jour ?? tx?.when ?? null;
+  }
+
+  // Applique la normalisation sur place. Renvoie true si un changement a eu lieu
+  function normalizeInPlace(tx) {
+    const raw = pickDateField(tx);
+    const parsed = parseLooseDate(raw);
+    if (!parsed) return false;
+    const norm = toLocalISODate(parsed);
+    if (!norm) return false;
+
+    // On réécrit les champs courants si présents
+    let changed = false;
+    if (tx.date !== undefined && tx.date !== norm) { tx.date = norm; changed = true; }
+    if (tx.dateStr !== undefined && tx.dateStr !== norm) { tx.dateStr = norm; changed = true; }
+    // Si aucun des deux n’existait, on crée "date"
+    if (tx.date === undefined && tx.dateStr === undefined) {
+      tx.date = norm; changed = true;
+    }
+    return changed;
+  }
+
+  function normalizeAllTransactions() {
+    try {
+      const arr = Array.isArray(window.transactions) ? window.transactions : null;
+      if (!arr) return false;
+      let changed = false;
+      for (const t of arr) {
+        try { if (normalizeInPlace(t)) changed = true; } catch {}
+      }
+      return changed;
+    } catch { return false; }
+  }
+
+  // Expose au besoin
+  window.normalizeTxDatesNow = function() {
+    const changed = normalizeAllTransactions();
+    if (changed) {
+      // Si ton app écoute cet event, elle re-rend le calendrier
+      window.dispatchEvent(new Event('transactions-updated'));
+    }
+  };
+
+  // Au chargement : normaliser une fois, puis MAJ l’UI si modifié
+  document.addEventListener('DOMContentLoaded', () => {
+    const changed = normalizeAllTransactions();
+    if (changed) {
+      // Laisse le thread libre puis notifie
+      setTimeout(() => window.dispatchEvent(new Event('transactions-updated')), 0);
+    }
+  });
+
+  // À chaque mise à jour externe des transactions, on tente de (re)normaliser
+  // (sans reboucler : on ne redéclenche pas l’event ici)
+  window.addEventListener('transactions-updated', () => {
+    normalizeAllTransactions();
+  });
+})();
+
+/* ==========================================================
+   Watchdog post-refresh : normalise les dates dès que
+   les transactions sont (re)chargées, puis notifie l'UI.
+   - Appelle window.normalizeTxDatesNow() plusieurs fois
+     pendant quelques secondes pour couvrir le chargement async.
+   ========================================================== */
+(function ensureDatesNormalizedAfterRefresh(){
+  const TICK_MS = 700;     // fréquence de vérif
+  const MAX_MS  = 15000;   // arrêt après 15 s
+  let elapsed = 0;
+
+  function tick(){
+    // Si notre normaliseur existe, on le lance (idempotent)
+    if (typeof window.normalizeTxDatesNow === 'function') {
+      window.normalizeTxDatesNow();
+    }
+    elapsed += TICK_MS;
+    if (elapsed >= MAX_MS) clearInterval(timer);
+  }
+
+  // Démarre après DOM ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { tick(); });
+  } else {
+    tick();
+  }
+
+  // Boucle douce pendant MAX_MS
+  const timer = setInterval(tick, TICK_MS);
+
+  // Si ton app émet un évènement de fin de chargement, on s’y branche aussi
+  ['transactions-loaded','data-loaded','storage-loaded'].forEach(ev => {
+    window.addEventListener(ev, () => {
+      if (typeof window.normalizeTxDatesNow === 'function') window.normalizeTxDatesNow();
+    });
+  });
+})();
+
+/* ==========================================================
+   Stockage transactions — V2.1 (compat calendrier)
+   - Persiste un TABLEAU complet dans localStorage.transactions_v2
+   - Compat calendrier : `date` => "dd-mm-yyyy"
+   - Ajoute `dateISO` => "yyyy-mm-dd" pour les calculs
+   - Miroir legacy 'transactions' (tableau complet) avec `date` "dd-mm-yyyy"
+   - Normalisation robuste des dates et montants
+   ========================================================== */
+(function txStoreV2_1(){
+  'use strict';
+
+  const V2_KEY    = 'transactions_v2';
+  const LEGACY_KEY = 'transactions'; // certains modules la lisent encore
+
+  // ---------- Helpers ----------
+  function parseAmount(x){
+    // Prend en charge "−500,00 €", " - 500.00", "(500)", etc.
+    if (typeof x === 'number') return (Math.abs(x) < 1e-9) ? 0 : x;
+    if (x == null) return 0;
+
+    let s = String(x).trim();
+
+    // Parenthèses => négatif
+    let negParen = false;
+    if (s.startsWith('(') && s.endsWith(')')) { negParen = true; s = s.slice(1, -1); }
+
+    // Remplacer les minus “exotiques” par un vrai '-'
+    s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-'); // −, ‒, –, —
+
+    // Nettoyage espaces/monnaies/symboles
+    s = s.replace(/\s+/g, '');
+    s = s.replace(/[€$£₤]/g, '');
+
+    // Si virgule décimale sans point -> on la convertit
+    if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.');
+
+    // Supprimer tous les séparateurs de milliers possibles
+    s = s.replace(/[,’'` \u00A0]/g, ''); // , ’ ' ` espace fine insécable &nbsp;
+
+    // Ne garder que chiffres, point et tiret
+    s = s.replace(/[^0-9.\-]/g, '');
+
+    // Ne conserver qu'un seul '-' en tête si présent
+    if (s.includes('-')) {
+      const negative = s.trim().startsWith('-');
+      s = s.replace(/-/g, '');
+      if (negative) s = '-' + s;
+    }
+
+    let v = parseFloat(s);
+    if (!Number.isFinite(v)) v = 0;
+    if (negParen) v = -Math.abs(v);
+
+    // Évite le -0
+    if (Object.is(v, -0)) v = 0;
+    if (Math.abs(v) < 1e-9) v = 0;
+
+    return v;
+  }
+
+  function parseLooseDate(input){
+    if (!input) return null;
+    if (input instanceof Date && !isNaN(input)) return input;
+    const s = String(input).trim();
+
+    // dd-mm-yyyy
+    let m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (m){ const d=new Date(+m[3], +m[2]-1, +m[1], 12, 0, 0); return isNaN(d)?null:d; }
+    // dd/mm/yyyy
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m){ const d=new Date(+m[3], +m[2]-1, +m[1], 12, 0, 0); return isNaN(d)?null:d; }
+    // yyyy/mm/dd
+    m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if (m){ const d=new Date(+m[1], +m[2]-1, +m[3], 12, 0, 0); return isNaN(d)?null:d; }
+
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+
+  function toISO(d){
+    if (!(d instanceof Date) || isNaN(d)) return '';
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+
+  function toFR(d){
+    if (!(d instanceof Date) || isNaN(d)) return '';
+    const dd=String(d.getDate()).padStart(2,'0'), m=String(d.getMonth()+1).padStart(2,'0'), y=d.getFullYear();
+    return `${dd}-${m}-${y}`; // <-- format attendu par le calendrier
+  }
+
+  function normalizeTx(t){
+    if (!t || typeof t !== 'object') return null;
+
+    // ----- Date -----
+    const rawDate = t.date ?? t.dateISO ?? t.day ?? t.jour ?? t.when ?? '';
+    const d = parseLooseDate(rawDate);
+    const dateISO = toISO(d) || '';
+    const dateFR  = toFR(d)  || ''; // format attendu par le calendrier
+
+    // ----- Description (fallbacks sûrs) -----
+    const description =
+      (t.description ?? t.label ?? t.libelle ?? t.titre ?? t.title ?? t.nom ?? t.name ?? t.memo ?? t.notes ?? '')
+        .toString().trim() || '(Sans libellé)';
+
+    // ----- Montant & type -----
+    let amount = parseAmount(t.amount ?? t.montant ?? t.value ?? t.prix ?? t.total);
+    let type = (t.type === 'income' || t.type === 'expense') ? t.type : (amount < 0 ? 'expense' : 'income');
+
+    // Cohérence signe/type
+    if (type === 'expense' && amount > 0) amount = -Math.abs(amount);
+    if (type === 'income'  && amount < 0) amount =  Math.abs(amount);
+    if (Math.abs(amount) < 1e-9) amount = 0; // évite -0
+
+    const category = (t.category ?? t.categorie ?? t.cat ?? '').toString();
+
+    return {
+      id: t.id || (crypto?.randomUUID?.() ?? (Date.now()+'-'+Math.random())),
+      description,
+      category,
+      type,
+      amount,
+      date: dateISO || dateFR || '',
+      dateStr: dateFR || dateISO || ''
+    };
+  }
+
+  // ---------- Lecture / écriture ----------
+  function readV2(){
+    try{
+      const raw = localStorage.getItem(V2_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.map(normalizeTx).filter(Boolean) : [];
+    }catch{ return []; }
+  }
+
+  function readLegacy(){
+    try{
+      const raw = localStorage.getItem(LEGACY_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(normalizeTx).filter(Boolean);
+      if (parsed && typeof parsed === 'object') return [normalizeTx(parsed)].filter(Boolean); // cas "dernière transaction seule"
+      return [];
+    }catch{ return []; }
+  }
+
+  function saveAll(list){
+    try{
+      const clean = (Array.isArray(list) ? list.map(normalizeTx).filter(Boolean) : []);
+      // Persistance principale (V2)
+      localStorage.setItem(V2_KEY, JSON.stringify(clean));
+      // Miroir "legacy" (toujours un TABLEAU, pas un objet)
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(clean));
+      // Laisse le reste de l'app gérer le rendu
+    }catch{}
+  }
+
+  // ---------- Hydrate au chargement ----------
+  function hydrateOnLoad(){
+    let list = readV2();
+    if (!list.length){
+      // Migration depuis l’ancienne clé si besoin
+      const legacy = readLegacy();
+      if (legacy.length){
+        list = legacy;
+        saveAll(list);
+      }
+    }
+    // Publie côté app (garde la même référence)
+    if (!Array.isArray(window.transactions)) window.transactions = [];
+    window.transactions.length = 0;
+    list.forEach(t => window.transactions.push(t));
+
+    // Notifie l’UI existante (calendrier/historique/…)
+    window.dispatchEvent(new Event('transactions-updated'));
+  }
+
+  // ---------- Autosave ----------
+  let lastSnapshot = '';
+  function snapshot(list){
+    try{ return JSON.stringify(list.map(t => ({id:t.id, date:t.date, amount:t.amount, type:t.type}))); }
+    catch{ return ''; }
+  }
+
+  function tryAutosave(){
+    const arr = Array.isArray(window.transactions) ? window.transactions.map(normalizeTx).filter(Boolean) : [];
+    const snap = snapshot(arr);
+    if (snap !== lastSnapshot){
+      lastSnapshot = snap;
+      saveAll(arr);
+    }
+  }
+
+  window.addEventListener('transactions-updated', tryAutosave);
+  setInterval(tryAutosave, 1000);
+  window.addEventListener('beforeunload', tryAutosave);
+
+  // ---------- Go (déféré pour éviter le FOUC) ----------
+  (function initOnce(){
+    let done = false;
+    const run = async () => {
+      if (done) return; done = true;
+      try { await (document.fonts?.ready ?? Promise.resolve()); } catch {}
+      requestAnimationFrame(() => { try { hydrateOnLoad(); } catch(e){ console.error(e); } });
+    };
+    if (document.readyState === 'complete') {
+      run();
+    } else {
+      window.addEventListener('load', run, { once: true });
+    }
+  })();
+
+})(); // fin IIFE txStoreV2_1
+
+// --- Historique : rendu (tri décroissant par date)
+function renderHistory(list){
+  const container =
+    document.getElementById('history-list') ||
+    document.getElementById('history') ||
+    document.querySelector('.history-list');
+  if (!container) return;
+
+  const TXS = Array.isArray(list) ? list : getUnifiedTransactions();
+
+  // Parse date robuste (ISO ou formats FR)
+  const toTime = (t) => {
+    const iso = (t.date || t.dateISO || '').toString();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date(iso + 'T12:00:00').getTime();
+    const raw = iso || t.day || t.dateStr || '';
+    const d = (typeof parseLooseDate === 'function') ? parseLooseDate(raw) : new Date(raw);
+    return isNaN(d) ? 0 : d.getTime();
+  };
+
+  const rows = [...TXS].sort((a,b) => toTime(b) - toTime(a)).map(t => {
+    const amt = Number(t.amount) || 0;
+    const dd  = (t.date || t.dateStr || '').replace(/-/g,'/'); // affichage simple
+    return `
+      <div class="hist-row" data-id="${t.id || ''}">
+        <span class="h-date">${dd}</span>
+        <span class="h-cat">${renderCategoryIconInline(t.category)}</span>
+        <span class="h-desc">${(t.description || '').toString()}</span>
+        <span class="h-amt ${amt < 0 ? 'neg' : 'pos'}">${formatAmount(amt)}</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = rows.join('') || '<div class="empty">Aucune transaction.</div>';
+}
+
+// --- Lance l'édition pour une transaction donnée (essaie plusieurs noms connus)
+function tryOpenEdit(txId){
+  if (!txId) return;
+  const fns = [
+    window.openEditModal,
+    window.openEditTransaction,
+    window.editTransaction,
+    window.showEditModal
+  ].filter(fn => typeof fn === 'function');
+
+  if (fns.length) { try { fns[0](txId); } catch(e){ console.error(e); } return; }
+
+  // Fallback : évènement global (au cas où ton app l'écoute)
+  try {
+    window.dispatchEvent(new CustomEvent('edit-transaction', { detail: { id: txId }}));
+  } catch {}
+  // Dernier recours : alerte dév
+  console.warn('[calendar] Aucune fonction d’ouverture de modale trouvée pour txId=', txId);
+}
+
+/* === Modal choix transaction (édition) === */
+function openEditChoiceForDate(dateIso){
+  const all = getUnifiedTransactions();
+  const list = all.filter(t => occursOnDate(t, dateIso));
+  if (!list.length) return;
+  if (list.length === 1) { tryOpenEdit(list[0].id); return; }
+  openEditChoiceModal(list);
+}
+
+function openEditChoiceModal(list){
+  const modal = document.getElementById('modal-pick-transaction');
+  const body  = document.getElementById('mp-list');
+  const btnOk = document.getElementById('mp-confirm');
+  const btnCancel = document.getElementById('mp-cancel');
+  const btnClose  = document.getElementById('mp-close');
+  if (!modal || !body) return;
+
+  // Liste (radios)
+  const esc = (s)=>String(s||'').replace(/[&<>]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+  body.innerHTML = list.map((t, i) => {
+    const id = esc(t.id || ('id'+i));
+    const desc = esc(t.description || '');
+    const amt  = Number(t.amount)||0;
+    return `
+      <label class="mp-item" style="display:flex;align-items:center;gap:.6rem;cursor:pointer;">
+        <input type="radio" name="mp-choice" value="${id}" ${i===0?'checked':''}" style="margin-right:.4rem;">
+        <span class="mp-icon">${renderCategoryIconInline(t.category)}</span>
+        <span class="mp-desc" style="flex:1 1 auto;min-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${desc}</span>
+        <span class="mp-amt ${amt<0?'neg':'pos'}" style="font-variant-numeric:tabular-nums;">${formatAmount(amt)}</span>
+      </label>
+    `;
+  }).join('');
+
+  let currentId = list[0]?.id || null;
+  const update = () => {
+    const r = body.querySelector('input[name="mp-choice"]:checked');
+    currentId = r ? r.value : null;
+    if (btnOk) { btnOk.disabled = !currentId; btnOk.toggleAttribute('aria-disabled', !currentId); }
+  };
+  body.querySelectorAll('input[name="mp-choice"]').forEach(r => {
+    r.addEventListener('change', update);
+    r.closest('.mp-item')?.addEventListener('dblclick', () => { hidePickModal(); tryOpenEdit(r.value); });
+  });
+  update();
+
+  function showPickModal(){
+    modal.style.display = 'grid';
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden','false');
+    document.body.classList.add('modal-open'); // bloque le scroll
+  }
+  function hidePickModal(){
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden','true');
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }
+
+  // actions
+  btnOk.onclick = () => { if (!currentId) return; hidePickModal(); tryOpenEdit(currentId); };
+  btnCancel.onclick = btnClose.onclick = hidePickModal;
+
+  // clic sur le fond (en dehors de .modal-content) -> fermer
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) hidePickModal();
+  }, { once:true });
+
+  showPickModal();
+}
+
+/* ==== PATCH FOUC 2025-08-12 : rendus après CSS + polices ==== */
+(function(){
+  function onLoad(){
+    Promise.resolve(document.fonts?.ready).catch(()=>{}).then(()=>{
+      requestAnimationFrame(() => {
+        try { window.renderStats?.(); } catch {}
+        try { window.refreshUI?.(); } catch {}
+      });
+    });
+  }
+  if (document.readyState === 'complete') onLoad();
+  else window.addEventListener('load', onLoad, { once:true });
 })();

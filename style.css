@@ -150,14 +150,14 @@
      margin-top: 2rem;
 }
  header.site-header {
-     background: #65b8f7;
-     color: #fff;
-     padding: 1.2rem 1rem 1rem 1rem;
-     text-align: center;
-     border-bottom: 3px solid #c2e3fa;
-    /* important : pile verticale, pas côte-à-côte */
-     display: block !important;
+  background: var(--topbar-bg, #65b8f7);
+  color: #fff;
+  padding: 1.2rem 1rem 1rem 1rem;
+  text-align: center;
+  border-bottom: 3px solid var(--topbar-border, #c2e3fa);
+  display: block !important; /* pile verticale */
 }
+
 /* Dans l’en-tête principal, on force l’app-nav à rester “normale” */
 /* Ancre locale pour le menu profil */
  header.site-header {
@@ -554,6 +554,39 @@
      --color-holiday: #1f1a16;
      --color-today: #3ea6ff;
 }
+/* Agenda-specific dark tweaks */
+/* Make day squares less glaring in dark mode */
+.dark-mode #app-agenda .ag-day {
+    /* Make agenda day squares noticeably darker but keep text high-contrast */
+    background: color-mix(in srgb, var(--color-surface) 85%, #000000 15%);
+    border-color: rgba(255,255,255,0.06);
+    color: var(--on-surface-strong);
+}
+.dark-mode #app-agenda .ag-day .ag-pill {
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+/* Improve day-number contrast specifically for the Agenda component in dark mode */
+.dark-mode #app-agenda .ag-day > div > div:first-child {
+    color: var(--on-surface-strong);
+    font-weight: 800;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+    font-size: 1.06em;
+    line-height: 1;
+}
+
+/* Ensure the 'Aujourd’hui' badge remains visible */
+.dark-mode #app-agenda .ag-day .badge {
+    background: var(--color-today) !important;
+    color: #0b0b0b !important;
+    font-weight: 700;
+}
+/* Ensure calendar nav arrows and "Aujourd'hui" button contrast */
+.dark-mode #app-agenda .cal-nav .btn,
+.dark-mode #app-agenda .cal-nav .btn.ghost,
+.dark-mode #app-agenda .cal-nav .btn.primary {
+    color: var(--on-surface-strong) !important;
+}
  .dark-mode body {
      background: var(--color-background);
      color: var(--on-surface);
@@ -642,8 +675,11 @@
      background: var(--color-surface-2);
      color: var(--on-surface);
 }
- .dark-mode #calendar-section td .day-number {
-     color: #f0f0f0;
+.dark-mode #calendar-section td .day-number {
+    /* Stronger day number visibility for dark mode (agenda scoped if possible) */
+    color: var(--on-surface-strong);
+    text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+    font-weight: 800;
 }
  .dark-mode #calendar-section td.calendar-today {
      border: 2.5px solid var(--color-today);
@@ -696,7 +732,7 @@
 }
  .theme-toggle .tt-knob {
      position: absolute;
-     top: var(--tt-pad);
+     top: calc(var(--tt-pad) - 1px); /* monte le rond de 2px (mets -3px, -4px… si tu veux) */
      left: var(--tt-pad);
      width: calc(var(--tt-h) - 2*var(--tt-pad));
      height: calc(var(--tt-h) - 2*var(--tt-pad));
@@ -942,10 +978,11 @@
      color: #ad4d5a !important;
      box-shadow: 0 0 6px var(--color-today);
 }
- #calendar-section td.selected {
-     box-shadow: 0 0 0 2.5px var(--color-primary) inset;
-     border-color: var(--color-primary);
+#calendar-section td.selected {
+  box-shadow: 0 0 0 2.5px var(--color-primary) inset;
+  border-color: var(--color-primary);
 }
+
 /* Détails du jour (clair) */
  #day-details {
      margin-top: 1rem;
@@ -1024,15 +1061,15 @@
  #calendar-section table, #calendar-section th, #calendar-section td {
      table-layout: fixed;
 }
- #calendar-section td, #calendar-section th {
-     width: 14.2857%;
-     min-width: 48px;
-     max-width: 1fr;
-     min-height: 55px;
-     box-sizing: border-box;
-     vertical-align: middle;
-     text-align: center;
-     padding: 0;
+#calendar-section td, #calendar-section th {
+    width: 14.2857%;
+    min-width: 48px;
+    /* max-width: 1fr;  <-- à supprimer, valeur invalide */
+    min-height: 55px;
+    box-sizing: border-box;
+    vertical-align: middle;
+    text-align: center;
+    padding: 0;
 }
  #calendar-section td > * {
      display: block;
@@ -1164,6 +1201,56 @@
 }
  .service-actions button:hover {
      opacity: 0.9;
+}
+
+/* Bouton de configuration pour les services cloud (petit engrenage) */
+.config-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: #27524b;
+    border: none;
+    padding: 0.3em 0.5em;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.18s;
+}
+.config-btn i {
+    font-size: 1rem;
+}
+.config-btn:hover {
+    background: rgba(0,0,0,0.05);
+}
+.dark-mode .config-btn {
+    color: #e0e0e0;
+}
+.dark-mode .config-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* Les boutons de configuration ne doivent pas hériter du fond coloré des boutons d’action */
+.service-actions .config-btn {
+    background: transparent !important;
+    color: #27524b !important;
+    border: none;
+    padding: 0.3em 0.5em;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s;
+}
+.service-actions .config-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+.dark-mode .service-actions .config-btn {
+    color: #e0e0e0 !important;
+}
+.dark-mode .service-actions .config-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
 }
 /* Mode sombre du menu */
  body.dark-mode .profile-dropdown {
@@ -1874,8 +1961,13 @@
      border-color:var(--color-primary);
 }
 /* Hotfix: forcer l'affichage du sheet quand ouvert */
- #icon-sheet[aria-hidden="false"] {
-     display: block !important;
+#icon-sheet[aria-hidden="false"] {
+    display: block !important;
+    pointer-events: auto !important;   /* <-- capture les clics */
+}
+/* optionnel mais propre : */
+#icon-sheet[aria-hidden="true"] {
+    pointer-events: none !important;
 }
 /* Icon Picker — base propre */
  #icon-sheet {
@@ -1923,10 +2015,10 @@
      z-index: 5001;
 }
  .profile-trigger {
-     background: #65b8f7 !important;
-    /* même bleu que le bandeau */
-     color: #fff !important;
+  background: var(--topbar-bg, #65b8f7) !important; /* même couleur que le bandeau */
+  color: #fff !important;
 }
+
  .profile-dropdown {
      position: fixed;
      top: 46px;
@@ -1945,40 +2037,60 @@
          grid-template-columns: 1fr;
     }
 }
- .export-opt {
-     display: grid;
-     grid-template-columns: 38px 1fr;
-     gap: .6rem;
-     align-items: center;
-     padding: .7rem .8rem;
-     border: 1px solid #c3dbe9;
-     border-radius: 10px;
-     background: #f6fbfd;
-     cursor: pointer;
-     user-select: none;
+/* === Cartes d’export === */
+.export-opt {
+    display: grid;
+    grid-template-columns: auto 38px 1fr; /* checkbox | icône | texte */
+    gap: .6rem;
+    align-items: center;
+    padding: .7rem .8rem;
+    border: 1px solid #c3dbe9;
+    border-radius: 10px;
+    background: #f6fbfd;
+    cursor: pointer;
+    user-select: none;
 }
- .export-opt:hover {
-     background: #eaf6fd;
-     border-color: var(--color-primary);
+
+.export-opt input[type="checkbox"] {
+    grid-column: 1;
+    accent-color: var(--color-primary);
 }
- .export-opt input[type="checkbox"] {
-     accent-color: var(--color-primary);
+
+.export-opt .opt-icon {
+    grid-column: 2;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #eef6fa;
+    color: #27524b;
+    border: 1px dashed #c3dbe9;
+    font-size: 1.1rem;
 }
- .export-opt .opt-icon {
-     width: 38px;
-     height: 38px;
-     border-radius: 50%;
-     display: grid;
-     place-items: center;
-     background: #eef6fa;
-     color: #27524b;
-     border: 1px dashed #c3dbe9;
-     font-size: 1.1rem;
+
+/* Titre au-dessus, description en dessous */
+.export-opt .opt-text {
+    grid-column: 3;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
 }
- .export-opt .opt-text small {
-     display:block;
-     color:#6a7f88;
+.export-opt .opt-text strong {
+    display: block;
+    margin: 0;
 }
+.export-opt .opt-text small {
+    display: block;          /* plus "inline" */
+    margin: .2rem 0 0 0;     /* petit espace sous le titre */
+    white-space: normal;
+}
+
+.export-opt:hover {
+    background: #eaf6fd;
+    border-color: var(--color-primary);
+}
+
  .export-meta {
      margin-top: .9rem;
      display: grid;
@@ -2027,9 +2139,12 @@
      color: #27524b;
 }
  .dark-mode .month-total {
-     background: #1a1a1a;
-     border-color: #303030;
-     color: #eaeaea;
+      /* Brighter, less 'flat' card in dark mode so the finance recap remains readable
+          and visually consistent with the light theme's emphasis. Uses color-mix to
+          gently lift the surface without changing other tokens. */
+      background: color-mix(in srgb, var(--color-surface) 75%, #ffffff 25%);
+      border-color: rgba(255,255,255,0.04);
+      color: var(--on-surface);
 }
  .month-total .amount.negative {
      color: #b00020;
@@ -2055,9 +2170,11 @@
      color:#27524b;
 }
  .dark-mode .month-total{
-     background:#1a1a1a;
-     border-color:#303030;
-     color:#eaeaea;
+      /* Keep parity with the earlier definition: slightly lifted surface for
+          the finance summary to avoid a too-dark 'carré' in dark mode. */
+      background: color-mix(in srgb, var(--color-surface) 75%, #ffffff 25%);
+      border-color: rgba(255,255,255,0.04);
+      color: var(--on-surface);
 }
  .month-total .kpi{
      display:flex;
@@ -2258,3 +2375,479 @@
      align-items: center;
 }
  
+/* ==== Sélecteur de couleur du bandeau ==== */
+.swatch-list {
+  display: flex; flex-wrap: wrap; gap: .6rem; align-items: center;
+}
+.swatch-btn {
+  --size: 28px;
+  width: var(--size); height: var(--size);
+  border-radius: 50%; border: 2px solid rgba(0,0,0,.10);
+  background: var(--sw, #ccc); cursor: pointer; position: relative;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.12);
+}
+.swatch-btn:is(:hover,:focus-visible) { outline: none; border-color: var(--focus-ring, #65b8f7); }
+.swatch-btn.is-active::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
+  border: 2px solid var(--focus-ring, #65b8f7);
+}
+.custom-color {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .2rem .5rem; border: 1px solid #d7e6ef; border-radius: .6rem;
+}
+.custom-color input[type="color"] {
+  appearance: none; -webkit-appearance: none; border: none; background: none;
+  padding: 0; width: 28px; height: 28px; cursor: pointer;
+}
+.custom-color span { font-size: .9rem; color: var(--on-surface, #324a52); }
+
+/* ====== Découvert : champs dans le profil ====== */
+.od-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 280px;
+}
+.od-input {
+  width: 100%;
+  padding: .6rem .9rem;
+  border: 1px solid #d7e6ef;
+  border-radius: .6rem;
+  background: var(--color-surface, #fff);
+  color: var(--on-surface-strong, #243037);
+}
+html.dark-mode .od-input {
+  border-color: #2a3b44;
+  background: #12181c;
+  color: #e6edf3;
+}
+.od-suffix {
+  position: absolute;
+  right: .6rem;
+  opacity: .65;
+  font-weight: 600;
+}
+.od-alert-row {
+  display: inline-flex; align-items: center; gap:.5rem;
+  user-select: none;
+}
+.od-help { opacity: .8; }
+
+/* ====== Jauge de découvert (affichée sous le bandeau) ====== */
+.od-gauge {
+  --od-bg: color-mix(in srgb, #000 8%, transparent);
+  --od-fill: #2ecc71;       /* vert par défaut */
+  --od-danger: #ef5350;     /* rouge */
+  --od-warn: #ff9800;       /* orange */
+  --od-text: #ffffff;       /* texte dans le bandeau */
+  max-width: 980px;
+  margin: .6rem auto 0;
+  padding: .2rem .8rem .6rem;
+}
+html.dark-mode .od-gauge {
+  --od-bg: color-mix(in srgb, #fff 12%, transparent);
+  --od-text: #e6edf3;
+}
+.od-gauge-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--od-bg);
+  overflow: hidden;
+  position: relative;
+}
+.od-gauge-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--od-fill);
+  transition: width .35s ease, background-color .25s ease;
+}
+.od-gauge-meta {
+  display: flex; gap:.8rem; justify-content: space-between;
+  font-size: .86rem; margin-top: .35rem; color: var(--od-text);
+}
+.od-alert {
+  margin-top: .35rem;
+  background: rgba(239, 83, 80, .12);
+  color: #ffb4b4;
+  border: 1px solid rgba(239,83,80,.35);
+  padding: .45rem .6rem;
+  border-radius: .6rem;
+  display: none;
+}
+.od-alert i { margin-right: .4rem; }
+
+/* ===== Apparence & préférences : espacement agréable ===== */
+.prefs-section { display: flex; flex-direction: column; gap: 1rem; }
+.prefs-group {
+  display: flex; flex-direction: column; gap: .6rem;
+  padding: .8rem .6rem;
+  border: 1px solid rgba(0,0,0,.06);
+  border-radius: .7rem;
+  background: var(--color-surface-2, #f6fbfd);
+}
+html.dark-mode .prefs-group {
+  border-color: rgba(255,255,255,.08);
+  background: #0f1418;
+}
+.prefs-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.prefs-label { font-weight: 700; }
+
+/* Champ découvert : largeur contenue dans le menu */
+.od-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 220px;
+
+  /* largeur estimée des flèches (stepper) -> Chrome/Android/Edge/Firefox */
+  --od-stepper-w: 26px;
+  /* espace entre le stepper et le symbole € */
+  --od-suffix-gap: .5rem;
+  /* largeur du symbole € (pour calcul du padding) */
+  --od-suffix-w: 1.2rem;
+}
+
+.od-input {
+  width: 100%;
+  padding: .6rem .9rem;
+  /* on réserve de la place pour stepper + € + un léger buffer */
+  padding-right: calc(var(--od-stepper-w) + var(--od-suffix-gap) + var(--od-suffix-w) + .6rem);
+
+  border: 1px solid #d7e6ef;
+  border-radius: .6rem;
+  background: var(--color-surface, #fff);
+  color: var(--on-surface-strong, #243037);
+
+  /* évite certains comportements Firefox avec les number fields */
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+html.dark-mode .od-input {
+  border-color: #2a3b44;
+  background: #12181c;
+  color: #e6edf3;
+}
+
+.od-suffix {
+  position: absolute;
+  /* on place le € à gauche des flèches */
+  right: calc(var(--od-stepper-w) + var(--od-suffix-gap));
+  opacity: .65;
+  font-weight: 600;
+  pointer-events: none; /* évite tout chevauchement clic */
+}
+
+.od-alert-row {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  user-select: none;
+}
+
+.od-help { opacity: .85; }
+
+/* ===== Jauge de découvert (affichée dans la section Calendrier) ===== */
+.od-gauge {
+  --od-bg: color-mix(in srgb, #000 8%, transparent);
+  --od-text: #324a52;
+  max-width: 980px;
+  margin: .4rem auto .8rem;
+  padding: .1rem 0 .2rem;
+}
+html.dark-mode .od-gauge { --od-bg: color-mix(in srgb, #fff 12%, transparent); --od-text: #e6edf3; }
+#calendar-section .od-gauge { width: 100%; }
+.od-gauge-bar {
+  height: 12px; border-radius: 999px; background: var(--od-bg); overflow: hidden; position: relative;
+}
+.od-gauge-fill {
+  height: 100%; width: 0%; background: #2ecc71; /* vert par défaut */
+  transition: width .35s ease, background-color .25s ease;
+}
+.od-gauge-meta {
+  display: flex; gap:.8rem; justify-content: space-between;
+  font-size: .9rem; margin-top: .35rem; color: var(--od-text);
+}
+.od-alert {
+  margin-top: .35rem;
+  background: rgba(239, 83, 80, .12);
+  color: #ffb4b4;
+  border: 1px solid rgba(239,83,80,.35);
+  padding: .45rem .6rem;
+  border-radius: .6rem;
+  display: none;
+}
+.od-alert i { margin-right: .4rem; }
+
+/* Aligne proprement les éléments de l'entête de ligne */
+.service-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.service-head .service-status {
+  margin-left: auto;           /* pousse le statut complètement à droite */
+  font-weight: 700;
+}
+.service-head .config-btn {
+  width: 28px;
+  height: 28px;
+  margin-left: .25rem;         /* léger espace après le nom */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Statut "Non supporté..." plus discret */
+.service-status.unsupported {
+  font-size: .9rem;
+  font-weight: 600;
+  opacity: .85;
+}
+
+/* Bouton écrou (garde ton style existant si tu l'as déjà) */
+.config-btn{
+  border:1px solid #d7e6ef;
+  background: var(--color-surface, #fff);
+  color: var(--on-surface-strong, #243037);
+  border-radius:.6rem;
+  cursor:pointer;
+}
+.config-btn:hover{ filter: brightness(0.98); }
+html.dark-mode .config-btn{
+  border-color:#2a3b44; background:#12181c; color:#e6edf3;
+}
+
+/* ==== Guard modales (toujours cachées par défaut) ==== */
+.modal { display: none; }
+.modal[aria-hidden="true"] { display: none !important; }
+.modal.is-open,
+.modal[aria-hidden="false"] { display: block; }
+
+/* spécifique à la modale de choix */
+#modal-pick-transaction { display: none; }
+#modal-pick-transaction.is-open,
+#modal-pick-transaction[aria-hidden="false"] { display: block; }
+
+/* ==== MODALE "choisir transaction" : centrage + style ==== */
+#modal-pick-transaction {
+  position: fixed; inset: 0;
+  display: none;               /* cachée par défaut */
+  z-index: 2147483646;
+  display: grid; place-items: center;
+  padding: 2rem;
+}
+#modal-pick-transaction::before {
+  content: ""; position: fixed; inset: 0;
+  background: rgba(0,0,0,.5);
+  backdrop-filter: blur(1px);
+}
+#modal-pick-transaction.is-open,
+#modal-pick-transaction[aria-hidden="false"] { display: grid; }
+
+#modal-pick-transaction .modal-content{
+  position: relative;
+  width: min(560px, 92vw);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  background: var(--surface, #111827);
+  color: var(--text, #e5e7eb);
+  overflow: hidden;
+}
+#modal-pick-transaction .modal-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:.9rem 1.1rem; border-bottom:1px solid rgba(255,255,255,.08);
+}
+#modal-pick-transaction .modal-title{ margin:0; font-weight:600; }
+#modal-pick-transaction .modal-body{ padding: .9rem 1.1rem; }
+#modal-pick-transaction .modal-footer{
+  display:flex; gap:.5rem; justify-content:flex-end;
+  padding:.9rem 1.1rem; border-top:1px solid rgba(255,255,255,.08);
+}
+#modal-pick-transaction .modal-close{
+  position:absolute; top:.5rem; right:.5rem;
+  background:#111827; color:#e5e7eb; border:1px solid rgba(255,255,255,.15);
+  width:28px; height:28px; border-radius:8px; cursor:pointer;
+}
+#modal-pick-transaction .mp-list .mp-item{
+  border-radius:10px; padding:.55rem .6rem;
+}
+#modal-pick-transaction .mp-list .mp-item:hover{
+  background: rgba(101,184,247,.12);
+}
+#modal-pick-transaction .mp-icon i{ font-size:1.05rem; opacity:.95; }
+#modal-pick-transaction .mp-amt.neg{ color:#ef4444; }
+#modal-pick-transaction .mp-amt.pos{ color:#22c55e; }
+
+/* bloque le scroll quand une modale est ouverte */
+body.modal-open { overflow: hidden; }
+
+/* === Center fix pour #modal-pick-transaction === */
+#modal-pick-transaction { position: fixed; inset: 0; display: none; padding: 2rem; z-index: 2147483646; }
+#modal-pick-transaction.is-open,
+#modal-pick-transaction[aria-hidden="false"] {
+  display: grid !important;        /* écrase tout display:block venant d'ailleurs */
+  place-items: center !important;  /* centre vraiment */
+}
+#modal-pick-transaction .modal-content { margin: 0 !important; } /* pas de marge bootstrap-like */
+
+/* ==== Center override pour #modal-pick-transaction ==== */
+#modal-pick-transaction {
+  position: fixed !important;
+  inset: 0 !important;
+  display: none;
+  padding: 2rem;
+  z-index: 2147483646;
+}
+#modal-pick-transaction.is-open,
+#modal-pick-transaction[aria-hidden="false"] {
+  display: grid !important;        /* force le centrage via grid */
+  place-items: center !important;
+}
+#modal-pick-transaction .modal-content {
+  position: static !important;     /* annule tout bottom/right/absolute hérités */
+  margin: 0 !important;
+  inset: auto !important;
+  transform: none !important;
+}
+
+/* ==== FIX 2025-08-12 — modal pick: éviter le flou sur le contenu ==== */
+#modal-pick-transaction { filter: none !important; }
+#modal-pick-transaction::before {
+  z-index: 0;
+  pointer-events: none;
+}
+#modal-pick-transaction .modal-content {
+  position: relative !important;
+  z-index: 1 !important; /* contenu au-dessus du backdrop flouté */
+}
+
+/* ==== Modal "pick transaction" — thème clair/sombre + boutons ==== */
+#modal-pick-transaction .modal-content{
+  background: var(--color-surface);
+  color: var(--on-surface);
+}
+#modal-pick-transaction .modal-header,
+#modal-pick-transaction .modal-footer{
+  border-top: 1px solid var(--on-divider, #c3dbe9);
+  border-bottom: 1px solid var(--on-divider, #c3dbe9);
+}
+#modal-pick-transaction .modal-title{
+  color: var(--on-surface-strong);
+}
+
+/* Croix (même look clair/sombre) */
+#modal-pick-transaction .modal-close{
+  background: var(--color-surface-2, #f6fbfd);
+  color: var(--on-surface);
+  border: 1px solid var(--on-divider, #c3dbe9);
+}
+
+/* Bouton Annuler avec la même esthétique que "Éditer" */
+.btn-secondary{
+  background: #9fb9c6;           /* clair */
+  border: none;
+  color: #0b0b0b;
+  padding: .55rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+.dark-mode .btn-secondary{
+  background: #2a2a2a;           /* sombre */
+  color: var(--on-surface);
+  border: 1px solid var(--on-divider, #303030);
+}
+.btn-secondary:hover{ filter: brightness(.95); }
+
+/* ==== Transactions : actions (taille icônes + contraste thème) ==== */
+
+/* Même taille pour crayon et corbeille */
+#transactions-list .edit-btn i,
+#transactions-list .remove-btn i,
+#tab-history .edit-btn i,
+#tab-history .remove-btn i {
+font-size: 1.12rem;
+line-height: 1;
+width: 1.25rem;
+height: 1.25rem;
+display: inline-flex;
+align-items: center;
+justify-content: center;
+vertical-align: middle;
+}
+
+/* Couleur du crayon selon le thème (blanc en sombre, noir en clair) */
+#transactions-list .edit-btn,
+#tab-history .edit-btn {
+background: transparent;
+border: 0;
+padding: .25rem;
+border-radius: 8px;
+color: #0b0b0b;                 /* clair par défaut */
+}
+html.dark-mode #transactions-list .edit-btn,
+html.dark-mode #tab-history .edit-btn {
+    color: #ffffff !important;      /* blanc en sombre */
+}
+#transactions-list .edit-btn i,
+#tab-history .edit-btn i { color: inherit !important; }
+
+/* Petit feedback visuel */
+#transactions-list .edit-btn:hover i,
+#transactions-list .remove-btn:hover i,
+#tab-history .edit-btn:hover i,
+#tab-history .remove-btn:hover i {
+transform: scale(1.07);
+}
+#transactions-list .edit-btn:focus-visible,
+#tab-history .edit-btn:focus-visible {
+outline: 2px solid var(--color-primary, #65b8f7);
+outline-offset: 2px;
+}
+
+/* Nudge vertical de l’icône corbeille */
+#transactions-list .remove-btn i,
+#tab-history .remove-btn i {
+position: relative;
+top: -1px; /* ← monte la corbeille. Mets -3px, -4px… si tu veux plus haut */
+}
+
+/* Nudge vertical du KNOB (l’icône lune/soleil uniquement) */
+:is(#theme-toggle, #theme-switch, .theme-toggle, .theme-switch)
+:is(.knob, .thumb, .handle, .toggle-thumb, .toggle-circle, .switch-knob, .switch-handle) {
+    position: relative;
+    top: -10000px; /* ← monte le rond. Mets -3px, -4px… (ou +2px pour descendre) */
+}
+
+/* ==== PDF export: fallback sans color-mix() ==== */
+html.pdf-exporting .od-gauge { --od-bg: rgba(0,0,0,.08) !important; }
+html.dark-mode.pdf-exporting .od-gauge,
+html.pdf-exporting.dark-mode .od-gauge { --od-bg: rgba(255,255,255,.12) !important; }
+
+/* ==== PDF export mode ==== */
+body.is-exporting #legend-container,
+body.is-exporting .calendar-side-col,
+body.is-exporting .calendar-legend,
+body.is-exporting [data-role="legend"] {
+    display: none !important;
+}
+
+body.is-exporting #calendar-section .calendar-nav button,
+body.is-exporting #calendar-section .calendar-nav .btn {
+    display: none !important;
+}
+
+body.is-exporting #calendar-section .calendar-nav {
+    box-shadow: none !important;
+}
+
+/* ==== PDF export: neutralise color-mix() pour html2canvas ==== */
+body.is-exporting .od-gauge {
+    --od-bg: rgba(0,0,0,.08) !important;
+}
+html.dark-mode body.is-exporting .od-gauge {
+    --od-bg: rgba(255,255,255,.12) !important;
+}
