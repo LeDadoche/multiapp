@@ -566,6 +566,8 @@
     background: color-mix(in srgb, var(--color-primary) 8%, transparent);
 }
 
+/* (No global override here — styling for agenda cells is handled in dark mode only.) */
+
 /* Improve day-number contrast specifically for the Agenda component in dark mode */
 .dark-mode #app-agenda .ag-day > div > div:first-child {
     color: var(--on-surface-strong);

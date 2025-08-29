@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "ritwickdey.LiveServer",
+    "eamodio.gitlens",
+    "github.copilot",
+    "github.codespaces"
+  ]
+}

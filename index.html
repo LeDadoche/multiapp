@@ -5,10 +5,12 @@
   <style>html.fouc-guard body{visibility:hidden}</style>
   <script>
     document.documentElement.classList.add('fouc-guard');
-    window.addEventListener('load', () => {
-      // fonts + CSS chargées à 'load' → on peut afficher
-      document.documentElement.classList.remove('fouc-guard');
-    }, { once:true });
+    // Prefer removing the guard on 'load' but also unguard on DOMContentLoaded or after a timeout
+    function removeFoucGuard(){ try{ document.documentElement.classList.remove('fouc-guard'); }catch(e){} }
+    window.addEventListener('load', removeFoucGuard, { once:true });
+    document.addEventListener('DOMContentLoaded', removeFoucGuard, { once:true });
+    // Fallback: don't hide UI for more than 3s even if external fonts are slow or blocked
+    setTimeout(removeFoucGuard, 3000);
   </script>
 
   <meta charset="UTF-8" />

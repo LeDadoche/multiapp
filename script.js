@@ -1,227 +1,39 @@
 // script.js (shim) — charge le vrai point d'entrée modulaire
 import './src/js/index.js';
 
+// Lightweight served-version marker to help detect caching in the browser console
+try{ console.log('[SCRIPT] loaded script.js — build ts:', new Date().toISOString()); }catch(e){}
+
 // Pour compatibilité, les autres scripts peuvent toujours s'appuyer sur globales exposées par index.js
 // --- PATCH A: sécurité pour openIconPicker (existe partout, ne plante jamais)
-if (typeof window.openIconPicker !== 'function') {
-  window.openIconPicker = function (e) {
-    try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
-    const trg = e?.currentTarget || e?.target || null;
-    const inputId   = trg?.dataset?.targetInput   || 'category';
-    const previewId = trg?.dataset?.targetPreview || 'selected-category';
 
-    // Si le bottom sheet V2 est dispo, on l'utilise
-    if (typeof window.__openIconSheet === 'function') {
-      window.__openIconSheet(inputId, previewId);
-      return;
-    }
-    // Fallback: ancien dropdown
-    const root = trg ? trg.closest('#category-picker, .category-picker, .category-picker-v2') : null;
-    const dd   = root?.querySelector('.category-dropdown');
-    if (dd) dd.style.display = (getComputedStyle(dd).display === 'none' ? 'block' : 'none');
-  };
+// Ensure a global currentMonth exists early: some UI code calls renderCalendar() on load
+// before the in-module `let currentMonth` is created. Use window.currentMonth to avoid TDZ.
+if (typeof window.currentMonth === 'undefined' || !(window.currentMonth instanceof Date)) {
+  window.currentMonth = new Date();
+  window.currentMonth.setDate(1);
 }
 
-// Exemple d’usage (tolérant si un bloc n’existe pas)
-onAll('#category-picker .category-icon-preview, .category-picker-v2 .cat-trigger', 'click', openIconPicker);
+// Hoist calendar color defaults to avoid TDZ when some setup code runs early
+var DEFAULT_CAL_COLORS_LIGHT = null;
+var DEFAULT_CAL_COLORS_DARK  = null;
 
-// --- FIX: pont unique pour ouvrir le picker d'icônes depuis partout ---
-function openIconPicker(e){
-  try {
-    e?.preventDefault?.();
-    e?.stopPropagation?.();
-  } catch {}
-  const trg = e?.currentTarget || e?.target || null;
-  const inputId   = trg?.dataset?.targetInput   || 'category';
-  const previewId = trg?.dataset?.targetPreview || 'selected-category';
+// Selected date used by the finance calendar; ensure it's defined early
+var selectedDate = null;
+// Selected transaction id in day details (hoisted to avoid assignment to undeclared variable)
+var selectedTxId = null;
+// Month sort mode for the month summary view
+var monthSortMode = 'date-asc';
 
-  // Si le bottom sheet V2 est chargé, on l'utilise
-  if (typeof window.__openIconSheet === 'function') {
-    window.__openIconSheet(inputId, previewId);
-    return;
-  }
-
-  // Sinon: fallback vers l'ancien dropdown si présent
-  const root = trg ? trg.closest('#category-picker, .category-picker, .category-picker-v2') : null;
-  const dd   = root?.querySelector('.category-dropdown');
-  if (dd) dd.style.display = (getComputedStyle(dd).display === 'none' ? 'block' : 'none');
-}
-
-// --- Configuration dynamique des services cloud ---
-// Ce fichier ne contient plus d'identifiants d'application par défaut. Pour chaque service
-// (Dropbox, Google Drive, Microsoft OneDrive), l'utilisateur peut saisir son propre
-// identifiant client via le menu de configuration. Les valeurs sont stockées
-// localement dans localStorage et récupérées via les fonctions ci‑dessous.
-const DEFAULT_CLOUD_FILE_PATH = '/transactions.json';
-
-// Stockage et récupération du client ID Dropbox
-function getDropboxClientId() {
-  return localStorage.getItem('dropbox_client_id') || '';
-}
-function setDropboxClientId(id) {
-  if (id) localStorage.setItem('dropbox_client_id', id);
-}
-
-// Stockage et récupération du client ID Google
-function getGoogleClientId() {
-  return localStorage.getItem('google_client_id') || '';
-}
-function setGoogleClientId(id) {
-  if (id) localStorage.setItem('google_client_id', id);
-}
-
-// Stockage et récupération du client ID Microsoft/OneDrive
-function getMSClientId() {
-  return localStorage.getItem('ms_client_id') || '';
-}
-function setMSClientId(id) {
-  if (id) localStorage.setItem('ms_client_id', id);
-}
-
-// Optionnel : personnaliser le chemin du fichier sur le cloud
-function getCloudFilePath() {
-  return localStorage.getItem('cloud_file_path') || DEFAULT_CLOUD_FILE_PATH;
-}
-function setCloudFilePath(path) {
-  if (path) localStorage.setItem('cloud_file_path', path);
-}
-
-// Jetons d'accès pour les différents services
-let googleAccessToken = null;
-let msAccessToken = null;
-
-let dbx, accessToken = null;
-
-// ===== SOURCE UNIQUE =====
-let transactions = [];
-
-// 🚀 BOOTSTRAP SYNCHRONE dès le chargement (avant tout rendu/async)
-// -> Alimente "transactions" depuis localStorage pour que le calendrier
-//    ait des données visibles immédiatement après F5.
-(function bootstrapTransactionsOnce() {
-  try {
-    const raw = localStorage.getItem('transactions');
-    const arr = raw ? JSON.parse(raw) : [];
-    transactions = Array.isArray(arr) ? arr : [];
-    // On aligne aussi window.transactions (historique lit parfois cette ref)
-    window.transactions = transactions;
-  } catch (_) {
-    transactions = [];
-    window.transactions = transactions;
-  }
-})();
-
-let currentMonth = new Date();
-let selectedDate = null; // mémorise la case sélectionnée (YYYY-MM-DD)
-let monthSortMode = 'date-asc'; // valeur initiale
-let selectedTxId = null; // id de la transaction sélectionnée dans #day-details
-
-// Utilitaires date
-function addMonths(date, months) {
-  const d = new Date(date);
-  const newDate = new Date(d.getFullYear(), d.getMonth() + months, d.getDate());
-  if (newDate.getDate() !== d.getDate()) newDate.setDate(0);
-  return newDate;
-}
-function formatDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-function parseDate(str) {
-  const [y, m, d] = str.split('-').map(n => parseInt(n, 10));
-  return new Date(y, m - 1, d);
-}
-function sameDay(a, b) {
-  return a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-}
-function monthKey(date) {
-  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
-}
-
-// ====== Données locales (fallback quand pas de Cloud) ======
-function loadTransactionsLocal() {
-  const raw = localStorage.getItem('transactions');
-  transactions = raw ? JSON.parse(raw) : [];
-}
-function saveTransactionsLocal() {
-  localStorage.setItem('transactions', JSON.stringify(transactions));
-}
-
-// ====== Stockage : abstraction (Local, Dossier, Dropbox) ======
-const STORAGE_MODE_KEY = 'storage_mode';
-const STORAGE_MODES = { LOCAL:'local', FOLDER:'folder', DROPBOX:'dropbox', GOOGLE:'google', ONEDRIVE:'onedrive' };
-
-// Handles pour le mode "Dossier local" (File System Access)
-let __folderDirHandle = null;
-let __folderFileHandle = null;
-
-function getStorageMode() {
-  return localStorage.getItem(STORAGE_MODE_KEY) || STORAGE_MODES.LOCAL;
-}
-function setStorageModeLocalValue(mode) {
-  localStorage.setItem(STORAGE_MODE_KEY, mode);
-  // coche les radios si présentes
-  try {
-    const el = document.querySelector(`input[name="storage-mode"][value="${mode}"]`);
-    if (el) el.checked = true;
-  } catch(_) {}
-}
-
+// Provide a top-level helper for File System Access support so early calls don't fail
 function isFsaSupported() {
   return typeof window.showDirectoryPicker === 'function';
 }
 
-// Charge selon le mode sélectionné (avec fallback)
-async function loadTransactions() {
-  const mode = getStorageMode();
-
-  if (mode === STORAGE_MODES.DROPBOX && typeof isDropboxConnected === 'function' && isDropboxConnected() && window.Dropbox && Dropbox.Dropbox) {
-    try {
-      dbx = new Dropbox.Dropbox({ accessToken });
-      await loadTransactionsDropbox();
-      return;
-    } catch (e) {
-      console.warn('[Storage] Dropbox KO → fallback local:', e);
-    }
-  }
-  if (mode === STORAGE_MODES.FOLDER && isFsaSupported()) {
-    try {
-      await loadTransactionsFolder();
-      return;
-    } catch (e) {
-      console.warn('[Storage] Dossier local KO → fallback local:', e);
-    }
-  }
-
-  // Fallback
-  loadTransactionsLocal();
-}
-
-async function persistTransactions() {
-  const mode = getStorageMode();
-
-  if (mode === STORAGE_MODES.DROPBOX && typeof isDropboxConnected === 'function' && isDropboxConnected()) {
-    await saveTransactionsDropbox().catch(e => {
-      console.warn('[Storage] save Dropbox KO → copie locale seulement', e);
-      saveTransactionsLocal();
-    });
-    return;
-  }
-  if (mode === STORAGE_MODES.FOLDER && isFsaSupported()) {
-    await saveTransactionsFolder().catch(e => {
-      console.warn('[Storage] save dossier KO → copie locale seulement', e);
-      saveTransactionsLocal();
-    });
-    return;
-  }
-
-  // Local par défaut
-  saveTransactionsLocal();
-}
+// Ensure token globals exist so early UI helpers won't throw if checked before modules set them
+window.accessToken = window.accessToken || null;
+window.googleAccessToken = window.googleAccessToken || null;
+window.msAccessToken = window.msAccessToken || null;
 
 // UI : radios + bouton choisir dossier
 function renderStorageModeUI() {
@@ -587,6 +399,31 @@ function configureMSClient() {
     alert('Identifiant OneDrive enregistré. Vous pouvez maintenant vous connecter.');
   }
   updateMSStatus();
+}
+
+// --- Stockage simple des identifiants clients (localStorage)
+function getDropboxClientId() {
+  return localStorage.getItem('dropbox_client_id') || null;
+}
+function setDropboxClientId(id) {
+  if (id === null || id === undefined) localStorage.removeItem('dropbox_client_id');
+  else localStorage.setItem('dropbox_client_id', String(id));
+}
+
+function getGoogleClientId() {
+  return localStorage.getItem('google_client_id') || null;
+}
+function setGoogleClientId(id) {
+  if (id === null || id === undefined) localStorage.removeItem('google_client_id');
+  else localStorage.setItem('google_client_id', String(id));
+}
+
+function getMSClientId() {
+  return localStorage.getItem('ms_client_id') || null;
+}
+function setMSClientId(id) {
+  if (id === null || id === undefined) localStorage.removeItem('ms_client_id');
+  else localStorage.setItem('ms_client_id', String(id));
 }
 
 // ===== Toggle de thème sombre (switch avec persistance) =====
@@ -2554,16 +2391,41 @@ updateFolderStatus();
 
   // Registre des hooks par application
   const APP_HOOKS = Object.create(null);
+  const initializedApps = new Set();
   window.registerApp = function(name, hooks) {
+  try{ console.log('[APP] registerApp', name); } catch(e){}
     APP_HOOKS[name] = {
       init:    (hooks && typeof hooks.init    === 'function') ? hooks.init    : () => {},
       destroy: (hooks && typeof hooks.destroy === 'function') ? hooks.destroy : () => {}
     };
+    // If the section is already visible (page loaded with this app open), initialize it now
+    try{
+      const el = document.getElementById('app-' + name);
+      const isVisibleNow = el && window.getComputedStyle(el).display !== 'none';
+      const btn = document.querySelector(`.app-btn[data-app="${name}"]`);
+      const btnActive = btn && btn.classList.contains('active');
+      const saved = (()=>{ try{ return localStorage.getItem('app:last') || (location.hash||'').replace(/^#/,''); }catch(e){return null;} })();
+      const shouldInit = (!initializedApps.has(name)) && (isVisibleNow || btnActive || saved === name || (location.hash||'').replace(/^#/,'') === name);
+      if (shouldInit) {
+        try { console.log('[APP] init-on-register', name); APP_HOOKS[name].init(el || document.getElementById('app-'+name)); initializedApps.add(name); currentApp = name; } catch(e){ console.warn(e); }
+      }
+    }catch(e){}
+
+    // If the app registered late but should be the active app, ensure activation path runs
+    try{
+      const saved2 = (()=>{ try{ return localStorage.getItem('app:last') || (location.hash||'').replace(/^#/,''); }catch(e){return null;} })();
+      const activeBtn = document.querySelector('.app-btn.active')?.dataset.app;
+      const want = saved2 || activeBtn || (window.APP_BTNS && window.APP_BTNS[0] && window.APP_BTNS[0].dataset.app);
+      if (want === name && typeof activateApp === 'function' && !initializedApps.has(name)) {
+        try { console.log('[APP] registerApp -> activateApp', name); activateApp(name); } catch(e){}
+      }
+    }catch(e){}
   };
 
   let currentApp = null;
 
   function activateApp(app) {
+  try{ console.log('[APP] activateApp start', app, { currentApp }); } catch(e){}
     if (!window.ALLOWED.has(app)) app = window.APP_BTNS[0]?.dataset.app || 'finance';
 
     // 1) Débranche l’ancienne app
@@ -2583,11 +2445,30 @@ updateFolderStatus();
 
     // 4) Init de la nouvelle app
     if (currentApp !== app) {
-      try { APP_HOOKS[app]?.init(document.getElementById(`app-${app}`)); } catch (e) { console.warn(e); }
+      try {
+        if (!initializedApps.has(app)) {
+          try{ console.log('[APP] init-on-activate', app); } catch(e){}
+          // Only attempt to init if we have hooks registered
+          if (APP_HOOKS[app] && typeof APP_HOOKS[app].init === 'function') {
+            try {
+              APP_HOOKS[app].init(document.getElementById(`app-${app}`));
+              initializedApps.add(app);
+            } catch(initErr) {
+              console.error('[APP] init error for', app, initErr);
+            }
+          } else {
+            try { console.log('[APP] no init available yet for', app); } catch(e){}
+          }
+        }
+      } catch (e) { console.warn(e); }
       currentApp = app;
     }
+    try{ console.log('[APP] activateApp end', app, { currentApp, initializedApps: Array.from(initializedApps) }); } catch(e){}
   }
   window.activateApp = activateApp;
+
+  // Expose for runtime debugging in the console
+  try { window.__APP_HOOKS = APP_HOOKS; window.__initializedApps = initializedApps; } catch(e){}
 
   // Clics barre d’applis
   window.APP_BTNS.forEach(btn =>
@@ -2606,6 +2487,20 @@ updateFolderStatus();
   // Lancement
   activateApp(start);
 })(); // <-- fermeture correcte de l’IIFE
+
+// Safety: if some apps register after the IIFE runs, ensure the start app is initialized once DOM is ready
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    const saved = localStorage.getItem('app:last') || (location.hash||'').replace(/^#/,'');
+    const desired = (saved && window.ALLOWED && window.ALLOWED.has(saved)) ? saved : null;
+    const toCheck = desired || window.APP_BTNS?.[0]?.dataset.app;
+    if (toCheck && !window.__initializedAppsChecked) {
+      // activateApp will init if not yet initialized
+      if (typeof activateApp === 'function') activateApp(toCheck);
+      window.__initializedAppsChecked = true;
+    }
+  }catch(e){}
+});
 
       // Clics barre d’applis
       APP_BTNS.forEach(btn => btn.addEventListener('click', () => activateApp(btn.dataset.app)));
@@ -2917,13 +2812,8 @@ updateFolderStatus();
             return;
           }
         }
-        if (hasGrant()){
-          try{
-            await ensureToken(false);
-            const me = await whoAmI();
-            if (me && me.email){ setStatus('Connecté : ' + me.email); updateGoogleButtons(); return; }
-          }catch{}
-        }
+  // Do NOT call ensureToken(false) here: that can trigger a popup in some browsers
+  // instead, rely only on an already saved/valid token. If no saved token, remain disconnected.
         setStatus('Non connecté.');
         updateGoogleButtons();
       }
@@ -3268,14 +3158,16 @@ updateFolderStatus();
         const leading = startOfWeekIndex(first);
         for (let i=0;i<leading;i++){
           const cell=document.createElement('div'); cell.className='ag-day muted';
-          cell.style.cssText='min-height:96px; border-radius:12px; background:var(--color-surface-2,#f6fbfd); opacity:.5;';
+          // Let CSS handle the background so theme switches update appearance live.
+          cell.style.cssText='min-height:96px; border-radius:12px; opacity:.5;';
           grid.appendChild(cell);
         }
         for (let day=1; day<=daysInMonth; day++){
           const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
           const id = ymd(d);
           const cell = document.createElement('div'); cell.className='ag-day'; cell.dataset.date=id;
-          cell.style.cssText='min-height:120px; border-radius:14px; padding:8px; background:#fff; border:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; gap:6px;';
+          // Keep layout consistent; background is provided by CSS to respect theme changes.
+          cell.style.cssText='min-height:120px; border-radius:14px; padding:8px; border:1px solid rgba(0,0,0,.06); display:flex; flex-direction:column; gap:6px;';
           if (id === selectedDay) cell.classList.add('is-selected');
           const head=document.createElement('div'); head.style.cssText='display:flex; align-items:center; justify-content:space-between; gap:8px;';
           head.innerHTML='<div style="font-weight:600">'+day+'</div>'+(id===todayYMD()?'<span class="badge">Aujourd’hui</span>':'');
@@ -3389,10 +3281,11 @@ updateFolderStatus();
       function goMonth(delta){ currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth()+delta, 1); renderGrid(); renderDayPanel(); }
 
       function init(cont){
-        // ==== Récup des éléments ====
-        container  = cont;
-        grid       = container.querySelector('#ag-grid');
-        monthLbl   = container.querySelector('#ag-month');
+        try {
+          // ==== Récup des éléments ====
+          container  = cont;
+          grid       = container.querySelector('#ag-grid');
+          monthLbl   = container.querySelector('#ag-month');
         btnPrev    = container.querySelector('#ag-prev');
         btnNext    = container.querySelector('#ag-next');
         btnToday   = container.querySelector('#ag-today');
@@ -3423,6 +3316,7 @@ updateFolderStatus();
         const orgInviteBtn = container.querySelector('#org-invite');
 
   // ==== État local & rendu initial ====
+  try { console.log('[AGENDA] init start', { container: !!container && container.id ? container.id : (container?container.tagName:container), grid: !!grid, monthLbl: !!monthLbl, btnPrev: !!btnPrev, btnNext: !!btnNext, btnToday: !!btnToday }); } catch(e){}
   loadAll();
   // ensure selectedDay is initialized before first render
   selectedDay = todayYMD();
@@ -3430,6 +3324,7 @@ updateFolderStatus();
   try{ if (typeof buildFilters === 'function') buildFilters(); }catch{}
   renderGrid();
   renderDayPanel();
+          try { console.log('[AGENDA] post-render', { monthLabel: monthLbl && monthLbl.textContent, eventsCount: Array.isArray(events)?events.length:0, visibleCount: (visible && visible.size)||0, selectedDay }); } catch(e){}
 
         // ==== Correctif "refresh normal" ====
         const hadSaved = !!loadSavedToken(); // existe un jeton valide ?
@@ -3600,6 +3495,12 @@ updateFolderStatus();
               }
             });
           }
+          } catch (err) {
+            // Log the error clearly so users/developers can see why the Agenda tab failed
+            try { console.error('Agenda init error:', err); } catch(e){}
+            // Attempt minimal graceful degradation: expose basic UI elements so user can still interact
+            try { if (container) { container.querySelectorAll('button').forEach(b=>b.disabled=false); } } catch(e){}
+          }
       }; // <-- FIN de function init(cont)
     return { init, destroy(){ /* no-op */ } };
 })()); // <-- FIN DU MODULE AGENDA
@@ -3698,8 +3599,7 @@ function rgbToHex(rgb) {
   return `#${toHex(m[1])}${toHex(m[2])}${toHex(m[3])}`.toUpperCase();
 }
 
-let DEFAULT_CAL_COLORS_LIGHT = null;
-let DEFAULT_CAL_COLORS_DARK  = null;
+// Defaults are hoisted earlier to avoid TDZ; this spot only assigns via readDefaultCalendarColors()
 
 function readDefaultCalendarColors() {
   const root = getComputedStyle(document.documentElement);

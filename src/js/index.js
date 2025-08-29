@@ -7,6 +7,9 @@ import tx from './transactions.js';
 
 // Expose utilitaires globaux attendus par le reste de l'app
 window.formatAmount = utils.formatAmount;
+window.formatDate = utils.formatDate;
+window.parseDate = utils.parseDate;
+window.addMonths = utils.addMonths;
 window.$$ = dom.$$;
 window.onAll = dom.onAll;
 

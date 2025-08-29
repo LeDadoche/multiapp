@@ -79,11 +79,12 @@
     return dark;
   }
 
-  // Apply tokens into a style tag scoped to .dark-mode #app-agenda on html
+  // Apply tokens into a style tag scoped to .dark-mode #app-agenda on html OR body
   function applyDarkTokens(tokens){
     let s = document.getElementById(ID);
     if(!s){ s = document.createElement('style'); s.id = ID; document.head.appendChild(s); }
-    let css = 'html.dark-mode #app-agenda {\n';
+    // Support both html.dark-mode and body.dark-mode so theme toggles that flip either element work
+    let css = 'html.dark-mode #app-agenda, body.dark-mode #app-agenda {\n';
     for(const k in tokens) css += `  ${k}: ${tokens[k]};\n`;
     css += '}\n';
     s.textContent = css;
@@ -101,11 +102,10 @@
     try { Theme.refresh(); } catch(e) {}
     // expose API
     window.Theme = Theme;
-    // Optional: listen for explicit theme toggles by watching class changes but only after load
-    const obs = new MutationObserver((mutations)=>{
-      try { Theme.refresh(); } catch(e){}
-    });
-    obs.observe(document.documentElement, { attributes:true, attributeFilter:['class'] });
+  // Optional: listen for explicit theme toggles by watching class changes on both html and body
+  const obs = new MutationObserver((mutations)=>{ try { Theme.refresh(); } catch(e){} });
+  try { obs.observe(document.documentElement, { attributes:true, attributeFilter:['class'] }); } catch(e){}
+  try { if (document.body) obs.observe(document.body, { attributes:true, attributeFilter:['class'] }); } catch(e){}
   }
 
   if (document.readyState === 'loading') {
